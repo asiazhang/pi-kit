@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.0] - 2026-08-25
+
+### Added
+
+- **system-prompt**：注入 git 无交互约定（`GIT_EDITOR=true`、`--ff-only`、`--no-edit`）
+
 ## [0.1.0] - 2025-06-25
 
 ### Added
