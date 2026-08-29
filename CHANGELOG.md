@@ -5,7 +5,11 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.4.0] - 2026-08-30
+
+### Changed
+
+- **docs**：README 精简为纯用户视角，删除网关适配表、实现机制与内部参数；AGENTS.md 改为 Pointers 结构，收录 SNAPSHOT 维护指引
 
 ### Added
 
