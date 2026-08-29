@@ -23,6 +23,15 @@ Biome (`biome.json`) owns formatting and linting for `extensions/**` and `script
 - Never hand-format; run `npm run lint:fix` instead.
 - `package.json` is formatted by Biome too (tabs). Use a JSON-aware edit (e.g. python `json`) and re-run `lint:fix`.
 
+## Warp notification rules
+
+`extensions/warp-notify.ts` ports @juicesharp/rpiv-warp's OSC 777 notifications with one deliberate divergence — the run/block state is **refcounted** (`activeRuns`, `blockedCalls`), not boolean:
+
+- Subagent sessions bind this same extension (pi-subagents `extensions: true`), and ESM caching shares this module's state across parent + child instances. A child's `agent_end` must therefore only decrement the counter, never stop the spinner/heartbeat or emit a `stop` toast.
+- "Outermost" is a settable role (`outerSettled`), not just the 0→1 transition: background subagents (`run_in_background`) can outlive the run that spawned them, so after the outer run settles the next `agent_start` becomes a NEW outer (re-announces, takes over the heartbeat) even though the counter never reached zero; a non-outer end that drops the counter to zero stops the spinner but emits no stop toast.
+- All terminal writes are silent-swallow, all timers `unref()`ed, and detection (`TERM_PROGRAM` + `WARP_CLI_AGENT_PROTOCOL_VERSION` + broken-build gate) happens before any handler registration — outside Warp the feature costs nothing.
+- Timers/heartbeat live on module state too; any new lifecycle handler must keep the invariants above (see the file header for the full state machine).
+
 ## Footer rendering rules
 
 `extensions/tc-footer.ts` renders one ANSI-safe line:

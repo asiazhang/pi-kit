@@ -8,6 +8,7 @@
 
 - **自定义状态栏**（`tc-footer`）：单行显示工作目录、按有效上下文窗口计算的用量百分比与 10 格进度条、GLM coding plan 5 小时配额窗口（`⏳5h 42% ██░░░ ↻2h15m`，蓝色进度条，与绿色上下文条区分，仅在使用 `zai-coding-cn` 且已存 key 时显示，5 分钟轮询）、模型 id、思考等级（⚡）、git 分支。上下文颜色阈值跟随 pi 的自动压缩触发点动态计算，分支与思考等级变化时自动重渲染。
 - **系统提示词注入**（`system-prompt`）：每轮向系统提示词追加用户偏好（bash 搜索使用 `rg`，尊重 .gitignore）。
+- **Warp 终端通知**（`warp-notify`）：仅在 Warp 终端内激活（`TERM_PROGRAM=WarpTerminal`），向控制终端写 OSC 777 结构化事件，会话开始/提交提示词/提问阻塞/回答结束/空闲时弹系统通知；turn 进行中用盲文帧动画 tab 标题（转点），每 15s 心跳重报避免 Warp 把 tab 标记为空闲。状态机按 in-flight 计数实现，SubAgent（含并发后台子代理）不会提前关掉父会话的动画或发出假 toast；非 Warp 环境零注册零输出。移植自 `@juicesharp/rpiv-warp`，修复其子会话共享状态缺陷。
 
 ## 安装
 
