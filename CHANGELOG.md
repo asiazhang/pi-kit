@@ -5,7 +5,7 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [0.3.0] - 2026-08-28
+## [0.3.0] - 2026-08-29
 
 ### Added
 
