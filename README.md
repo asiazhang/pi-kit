@@ -1,14 +1,12 @@
 # pi-codebuddy-kit
 
-[pi](https://github.com/earendil-works/pi-mono) coding agent 的模型提供方扩展：接入腾讯 CodeBuddy 网关（`https://copilot.tencent.com/v2`）。
+[pi](https://github.com/earendil-works/pi-mono) coding agent 的腾讯 CodeBuddy 接入包：用 CodeBuddy 的 API key 在 pi 里使用 Claude / GPT / Gemini / GLM / MiniMax / Kimi / 混元 / DeepSeek 等模型，支持图片输入、推理档位、工具调用。
 
-注册 `tencent-copilot` provider，内置 17 个模型快照（Claude / GPT / Gemini / GLM / MiniMax / Kimi / Hunyuan / DeepSeek），支持图片输入、推理档位（effort）、工具调用。模型目录与网关兼容性参数于 2026-08-25 在线上网关逐模型验证。
+另附带三个 provider 无关的扩展（默认启用，随包一起加载）：
 
-另附带两个 provider 无关的扩展（默认启用，随包一起加载）：
-
-- **自定义状态栏**（`tc-footer`）：单行显示工作目录、按有效上下文窗口计算的用量百分比与 10 格进度条、GLM coding plan 5 小时配额窗口（`⏳5h 42% ██░░░ ↻2h15m`，蓝色进度条，与绿色上下文条区分，仅在使用 `zai-coding-cn` 且已存 key 时显示，5 分钟轮询）、模型 id、思考等级（⚡）、git 分支。上下文颜色阈值跟随 pi 的自动压缩触发点动态计算，分支与思考等级变化时自动重渲染。
+- **自定义状态栏**（`tc-footer`）：单行显示工作目录、上下文用量百分比与进度条、GLM coding plan 5 小时配额窗口（`⏳5h 42% ██░░░ ↻2h15m`，仅在使用 `zai-coding-cn` 且已存 key 时显示）、模型 id、思考等级（⚡）、git 分支。
 - **系统提示词注入**（`system-prompt`）：每轮向系统提示词追加用户偏好（bash 搜索使用 `rg`，尊重 .gitignore）。
-- **Warp 终端通知**（`warp-notify`）：仅在 Warp 终端内激活（`TERM_PROGRAM=WarpTerminal`），向控制终端写 OSC 777 结构化事件，会话开始/提交提示词/提问阻塞/回答结束/空闲时弹系统通知；turn 进行中用盲文帧动画 tab 标题（转点），每 15s 心跳重报避免 Warp 把 tab 标记为空闲。状态机按 in-flight 计数实现，SubAgent（含并发后台子代理）不会提前关掉父会话的动画或发出假 toast；非 Warp 环境零注册零输出。移植自 `@juicesharp/rpiv-warp`，修复其子会话共享状态缺陷。
+- **Warp 终端通知**（`warp-notify`）：仅在 Warp 终端内激活，会话开始、提交提示词、等待提问回答、回答结束、空闲时弹系统通知，turn 进行中在 tab 标题显示进行中动画；子会话（SubAgent）不会误触发通知。非 Warp 环境无任何行为。
 
 ## 安装
 
@@ -67,7 +65,7 @@ pi --model tencent-copilot/glm-5.3-ioa
 
 ### 模型目录
 
-当前快照（17 个）：
+当前包含以下模型：
 
 | id | 名称 |
 | --- | --- |
@@ -83,16 +81,7 @@ pi --model tencent-copilot/glm-5.3-ioa
 
 ## 网关兼容性说明
 
-网关是 OpenAI Chat Completions 兼容接口，但有若干差异，扩展已逐一适配：
-
-| 适配项 | 说明 |
-| --- | --- |
-| 流式 | 网关只接受流式请求（`stream: true`），非流式直接拒绝 |
-| 请求头 | 携带 CodeBuddy CLI 身份头（`x-codebuddy-request`、`x-ide-type/name/version` 等） |
-| `max_tokens` | 网关不认 `max_completion_tokens`，且 `max_tokens` 有最小值限制 |
-| `system` 角色 | 不使用 `developer` 角色 |
-| 不发 `store` / `strict` | 网关不接受这两个字段 |
-| 推理档位 | `reasoning_effort` 支持 low / medium / high / xhigh / max；当前快照全部模型均接受 |
+网关与标准 OpenAI 接口存在若干差异（流式、请求头、参数字段等），扩展已内置适配，使用上无需额外配置。
 
 ## 开发
 
@@ -119,8 +108,6 @@ PI_THEME=light npm run footer-preview
 ```
 
 命令、格式化规则与编辑纪律见 [AGENTS.md](AGENTS.md)。
-
-模型快照以元组数组维护（`SNAPSHOT`，位于 `extensions/tencent-copilot.ts`），新增模型只需加一行。
 
 ## License
 
