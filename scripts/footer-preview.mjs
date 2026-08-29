@@ -10,7 +10,7 @@
  * PI_THEME to override).
  */
 
-import { relative, resolve, sep } from "node:path"
+import { isAbsolute, relative, resolve, sep } from "node:path"
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui"
 
 const themeMod = await import(
@@ -58,8 +58,34 @@ function contextBar(pct, th) {
 	return theme.fg(color, "█".repeat(filled) + "░".repeat(10 - filled))
 }
 
+/** Mirror of PLAN_DIM_MS in extensions/tc-footer.ts — keep in sync. */
+const PLAN_DIM_MS = 10 * 60_000
+
+/** Mirror of formatCountdown() in extensions/tc-footer.ts — keep in sync. */
+function formatCountdown(resetAt, now) {
+	const ms = resetAt - now
+	if (ms <= 0) return "now"
+	const days = Math.floor(ms / 86_400_000)
+	if (days >= 1) return `${days}d${Math.floor((ms % 86_400_000) / 3_600_000)}h`
+	const hours = Math.floor(ms / 3_600_000)
+	const minutes = Math.floor((ms % 3_600_000) / 60_000)
+	return hours >= 1 ? `${hours}h${minutes}m` : `${minutes}m`
+}
+
+/** Mirror of planSegment() in extensions/tc-footer.ts — keep in sync. */
+function planSegment(w, now) {
+	const stale = now - w.capturedAt > PLAN_DIM_MS
+	const pct = Math.max(0, Math.min(100, Math.round(w.usedPercent)))
+	const filled = Math.round((pct / 100) * 5)
+	const bar = "█".repeat(filled) + "░".repeat(5 - filled)
+	const countdown = w.resetAt !== undefined ? ` ↻${formatCountdown(w.resetAt, now)}` : ""
+	if (stale) return theme.fg("dim", `⏳5h ${pct}% ${bar}${countdown}`)
+	const color = pct >= 90 ? "error" : pct >= 70 ? "warning" : "mdLink"
+	return theme.fg(color, `⏳5h ${pct}% ${bar}`) + (countdown ? theme.fg("dim", countdown) : "")
+}
+
 /** Mirror of render() in extensions/tc-footer.ts — keep in sync. */
-function renderLine(cwd, tokens, contextWindow, model, thinking, branch, width) {
+function renderLine(cwd, tokens, contextWindow, model, thinking, branch, planWindow, width) {
 	const left = theme.fg("dim", formatCwd(cwd))
 	let context = ""
 	if (tokens !== null && contextWindow > 0) {
@@ -73,29 +99,60 @@ function renderLine(cwd, tokens, contextWindow, model, thinking, branch, width) 
 		}
 	}
 	const think = thinking ? ` ${theme.fg("accent", `⚡${thinking}`)}` : ""
-	const right = model + think + (branch ? theme.fg("dim", ` (${branch})`) : "")
-	const pad = " ".repeat(
-		Math.max(1, width - visibleWidth(left) - visibleWidth(context) - visibleWidth(right)),
-	)
-	return truncateToWidth(left + context + pad + right, width)
+	const plan = planWindow ? planSegment(planWindow, Date.now()) : ""
+	const branchPart = branch ? theme.fg("dim", ` (${branch})`) : ""
+	// Narrow terminals drop the plan segment before the model id.
+	const build = (withPlan) => {
+		const right = [withPlan ? plan : "", model + think, branchPart].filter(Boolean).join(" ")
+		const pad = " ".repeat(
+			Math.max(1, width - visibleWidth(left) - visibleWidth(context) - visibleWidth(right)),
+		)
+		return truncateToWidth(left + context + pad + right, width)
+	}
+	return plan && visibleWidth(build(true)) > width ? build(false) : build(true)
 }
 
 const width = Number(process.argv[2]) || 80
 const cwd = process.cwd()
 
-// [label, tokens, contextWindow, model, thinking, branch]
+// Plan-window mock: usedPercent, reset 2h15m out, fetched `ageMin` ago.
+const plan = (usedPercent, ageMin = 0) => ({
+	usedPercent,
+	resetAt: Date.now() + 135 * 60_000,
+	capturedAt: Date.now() - ageMin * 60_000,
+})
+
+// [label, tokens, contextWindow, model, thinking, branch, planWindow]
 const cases = [
-	["128k window @ 30k (green)", 30_000, 131_072, "hunyuan-t1-latest", "high", "master"],
-	["128k window @ 70k (yellow)", 70_000, 131_072, "hunyuan-t1-latest", "high", "feature/footer"],
+	["128k window @ 30k (green)", 30_000, 131_072, "hunyuan-t1-latest", "high", "master", null],
 	[
-		"128k window @ 116k (red, near compaction)",
+		"128k window @ 30k + plan 42% (green + blue)",
+		30_000,
+		131_072,
+		"glm-5.3",
+		"high",
+		"master",
+		plan(42),
+	],
+	[
+		"128k window @ 70k + plan 75% (yellow + yellow)",
+		70_000,
+		131_072,
+		"glm-5.3",
+		"high",
+		"feature/footer",
+		plan(75),
+	],
+	[
+		"128k window @ 116k + plan 95% (red + red, near compaction)",
 		116_000,
 		131_072,
-		"hunyuan-t1-latest",
+		"glm-5.3",
 		"off",
 		"master",
+		plan(95),
 	],
-	["200k window @ 100k (yellow)", 100_000, 204_800, "hunyuan-t1-latest", "high", "master"],
+	["200k window @ 100k (yellow)", 100_000, 204_800, "hunyuan-t1-latest", "high", "master", null],
 	[
 		"1M window @ 200k (yellow — red is 65% of effective window)",
 		200_000,
@@ -103,6 +160,7 @@ const cases = [
 		"gpt-5",
 		null,
 		"main",
+		null,
 	],
 	[
 		"1M window @ 300k (yellow — red is 65% of effective window)",
@@ -111,6 +169,7 @@ const cases = [
 		"gpt-5",
 		"low",
 		"main",
+		null,
 	],
 	[
 		"1M window @ 440k (red — effective window nearly full)",
@@ -119,14 +178,24 @@ const cases = [
 		"gpt-5",
 		"high",
 		"main",
+		null,
 	],
-	["non-reasoning model, usage unknown", null, 131_072, "gpt-4o", null, "main"],
+	["non-reasoning model, usage unknown", null, 131_072, "gpt-4o", null, "main", null],
+	[
+		"plan stale >10min (whole segment dim)",
+		30_000,
+		131_072,
+		"glm-5.3",
+		"high",
+		"master",
+		plan(42, 15),
+	],
 ]
 
-for (const [label, tokens, contextWindow, model, thinking, branch] of cases) {
+for (const [label, tokens, contextWindow, model, thinking, branch, planWindow] of cases) {
 	console.log(`${label}:`)
-	console.log(renderLine(cwd, tokens, contextWindow, model, thinking, branch, width))
+	console.log(renderLine(cwd, tokens, contextWindow, model, thinking, branch, planWindow, width))
 	console.log()
 }
-console.log(`narrow (50 cols):`)
-console.log(renderLine(cwd, 116_000, 131_072, "hunyuan-t1-latest", "high", "master", 50))
+console.log(`narrow (50 cols) — plan segment dropped before the model id:`)
+console.log(renderLine(cwd, 116_000, 131_072, "glm-5.3", "high", "master", plan(42), 50))

@@ -5,6 +5,16 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.3.0] - 2026-08-28
+
+### Added
+
+- **footer**：新增 GLM coding plan（`zai-coding-cn`）5 小时配额窗口显示（`⏳5h 42% ██░░░ ↻2h15m`）：蓝色（mdLink）5 格进度条与绿色上下文条区分，≥70% 黄、≥90% 红，重置倒计时 dim；数据来自 bigmodel.cn 配额接口（响应结构已实测核对），凭据经 `modelRegistry.getApiKeyForProvider` 解析，仅在该 provider 活跃时显示；5 分钟轮询 + 渲染时惰性刷新，超 10 分钟的快照整段转暗，窄终端下先于模型 id 截断
+
+### Fixed
+
+- **footer-preview**：修复 `isAbsolute` 未导入导致脚本在 `$HOME` 内目录必然崩溃的问题
+
 ## [0.2.0] - 2026-08-25
 
 ### Added

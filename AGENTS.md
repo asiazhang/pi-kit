@@ -28,11 +28,12 @@ Biome (`biome.json`) owns formatting and linting for `extensions/**` and `script
 `extensions/tc-footer.ts` renders one ANSI-safe line:
 
 ```
-<cwd>  <pct>% <10-cell bar>  <model-id> ⚡<thinking> (<git-branch>)
+<cwd>  <pct>% <10-cell bar>  ⏳5h <pct>% <5-cell bar> ↻<countdown>  <model-id> ⚡<thinking> (<git-branch>)
 ```
 
 - cwd: `~`-relative inside `$HOME`, otherwise the last two path segments (`user/repo`).
 - Context percent: rounded to integer, computed against the effective window min(contextWindow, 450k); color thresholds are dynamic — small windows go red at pi's auto-compaction trigger, 450k-capped windows at 65%; yellow is half the red line.
+- Plan window (⏳5h): GLM coding plan (`zai-coding-cn`) 5h quota window, polled every 5 min from bigmodel.cn with the key resolved via `modelRegistry.getApiKeyForProvider`; shown only while that provider is active; blue (mdLink) bar (distinct from the green context bar), warning ≥70%, error ≥90%, snapshots older than 10 min render dim; dropped before the model id on narrow terminals.
 - Model id: default foreground. Branch: dim. Thinking: accent. Cwd: dim.
 - `scripts/footer-preview.mjs` mirrors this logic function-by-function (`formatCwd`, `contextBar`, `renderLine`). When changing render logic in `tc-footer.ts`, update the mirrors in the preview script and re-run it.
 
