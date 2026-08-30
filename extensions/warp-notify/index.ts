@@ -26,6 +26,13 @@
  *   for free: the tab spins until the last run ends, and a child's
  *   spurious `stop` toast and `idle_prompt` are gone.
  *
+ *   Runs are also attributed per session (`runsBySession`) so a child's
+ *   `session_shutdown` releases only the child's own share. The child
+ *   session is torn down right after its `agent_end` while the parent's
+ *   run is still live — an unconditional cleanup there stopped the
+ *   parent's spinner mid-run with nothing left to restart it (no
+ *   `agent_start` fires until the parent's run ends).
+ *
  * File layout mirrors upstream rpiv-warp (packages/rpiv-warp):
  * protocol.ts (detection/negotiation), payload.ts (builders), this file
  * (registration + state machine), plus the transport/spinner/config
@@ -87,8 +94,12 @@ let runCtx: ExtensionContext | undefined
 let idleTimer: ReturnType<typeof setTimeout> | undefined
 let heartbeat: ReturnType<typeof setInterval> | undefined
 
+/** Live runs per session id — `session_shutdown` releases only the torn-down session's share. */
+const runsBySession = new Map<string, number>()
+
 interface PendingBlockingCall {
 	readonly toolName: string
+	readonly sessionId: string
 	readonly input?: Record<string, unknown>
 }
 
@@ -128,6 +139,41 @@ function syncSpinner(): void {
 	}
 }
 
+/** Drop one live run for `ctx`'s session. No-op when `session_shutdown` already
+ *  released it — the shared counter must never be undercut by a stale `agent_end`. */
+function releaseRun(ctx: ExtensionContext): void {
+	const sessionId = ctx.sessionManager.getSessionId()
+	const owned = runsBySession.get(sessionId) ?? 0
+	if (owned <= 0) return
+	if (owned === 1) runsBySession.delete(sessionId)
+	else runsBySession.set(sessionId, owned - 1)
+	if (activeRuns > 0) activeRuns--
+}
+
+/** A session went away (subagent teardown, session switch, exit). Release only
+ *  what IT owned — never reset shared state while other runs are still live. */
+function cleanupSession(ctx: ExtensionContext): void {
+	const sessionId = ctx.sessionManager.getSessionId()
+	releaseRun(ctx)
+	for (const [callId, call] of pendingBlocking) {
+		if (call.sessionId !== sessionId) continue
+		pendingBlocking.delete(callId)
+		if (blockedCalls > 0) blockedCalls--
+	}
+	if (activeRuns > 0) {
+		if (runCtx?.sessionManager.getSessionId() === sessionId) {
+			// The torn-down session owned the announcements: hand back the outer
+			// role (the next `agent_start` takes over) and keep children spinning.
+			runCtx = undefined
+			outerSettled = true
+			stopHeartbeat()
+			cancelIdleTimer()
+		}
+		return
+	}
+	cleanupAll()
+}
+
 function cleanupAll(): void {
 	cancelIdleTimer()
 	stopHeartbeat()
@@ -136,6 +182,7 @@ function cleanupAll(): void {
 	runCtx = undefined
 	activeRuns = 0
 	blockedCalls = 0
+	runsBySession.clear()
 	outerSettled = false
 	pendingBlocking.clear()
 }
@@ -175,6 +222,8 @@ export default function registerWarpNotify(pi: ExtensionAPI): void {
 
 	pi.on("agent_start", async (_event, ctx) => {
 		activeRuns++
+		const sessionId = ctx.sessionManager.getSessionId()
+		runsBySession.set(sessionId, (runsBySession.get(sessionId) ?? 0) + 1)
 		if (activeRuns === 1 || outerSettled) {
 			// New outer run (fresh or takeover): announce and own the heartbeat.
 			outerSettled = false
@@ -189,7 +238,7 @@ export default function registerWarpNotify(pi: ExtensionAPI): void {
 	})
 
 	pi.on("agent_end", async (_event, ctx) => {
-		if (activeRuns > 0) activeRuns--
+		releaseRun(ctx)
 		const isOuter = ctx.sessionManager.getSessionId() === runCtx?.sessionManager.getSessionId()
 		// Nested run ended while the outer is still live (the original upstream
 		// bug): decrement only — no spinner stop, no toast.
@@ -231,6 +280,7 @@ export default function registerWarpNotify(pi: ExtensionAPI): void {
 		if (!BLOCKING_TOOLS.has(event.toolName)) return
 		pendingBlocking.set(event.toolCallId, {
 			toolName: event.toolName,
+			sessionId: ctx.sessionManager.getSessionId(),
 			input:
 				typeof event.input === "object" && event.input !== null
 					? (event.input as Record<string, unknown>)
@@ -254,7 +304,7 @@ export default function registerWarpNotify(pi: ExtensionAPI): void {
 		syncSpinner()
 	})
 
-	pi.on("session_shutdown", async () => {
-		cleanupAll()
+	pi.on("session_shutdown", async (_event, ctx) => {
+		cleanupSession(ctx)
 	})
 }
