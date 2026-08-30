@@ -53,9 +53,9 @@ function effectivePercent(tokens, contextWindow) {
 
 /** Mirror of contextBar() in extensions/tc-footer.ts — keep in sync. */
 function contextBar(pct, th) {
-	const filled = Math.round((Math.min(100, pct) / 100) * 10)
+	const filled = Math.round((Math.min(100, pct) / 100) * 20)
 	const color = pct >= th.red ? "error" : pct >= th.yellow ? "warning" : "success"
-	return theme.fg(color, "█".repeat(filled) + "░".repeat(10 - filled))
+	return theme.fg(color, "█".repeat(filled) + "░".repeat(20 - filled))
 }
 
 /** Mirror of PLAN_DIM_MS in extensions/tc-footer.ts — keep in sync. */
@@ -76,8 +76,11 @@ function formatCountdown(resetAt, now) {
 function planSegment(w, now) {
 	const stale = now - w.capturedAt > PLAN_DIM_MS
 	const pct = Math.max(0, Math.min(100, Math.round(w.usedPercent)))
-	const filled = Math.round((pct / 100) * 5)
-	const bar = "█".repeat(filled) + "░".repeat(5 - filled)
+	// 20 cells (5% each), ceil: any nonzero usage must light ≥1 cell (a few
+	// percent would round to zero and look untouched; for a quota bar
+	// over-reporting is the safe direction — it warns slightly early).
+	const filled = Math.ceil((pct / 100) * 20)
+	const bar = "█".repeat(filled) + "░".repeat(20 - filled)
 	const countdown = w.resetAt !== undefined ? ` ↻${formatCountdown(w.resetAt, now)}` : ""
 	if (stale) return theme.fg("dim", `⏳5h ${pct}% ${bar}${countdown}`)
 	const color = pct >= 90 ? "error" : pct >= 70 ? "warning" : "mdLink"
@@ -125,6 +128,15 @@ const plan = (usedPercent, ageMin = 0) => ({
 // [label, tokens, contextWindow, model, thinking, branch, planWindow]
 const cases = [
 	["128k window @ 30k (green)", 30_000, 131_072, "hunyuan-t1-latest", "high", "master", null],
+	[
+		"128k window @ 30k + plan 8% (blue, 2 lit cells)",
+		30_000,
+		131_072,
+		"glm-5.3",
+		"high",
+		"master",
+		plan(8),
+	],
 	[
 		"128k window @ 30k + plan 42% (green + blue)",
 		30_000,

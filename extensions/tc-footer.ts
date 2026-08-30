@@ -9,8 +9,8 @@
  *
  * Layout (single line, ANSI-safe truncation on narrow terminals):
  *
- *   ~/proj  42% █████░░░░░  ⏳5h 42% ██░░░ ↻2h15m  model-id ⚡high (git-branch)
- *   └─ cwd ─┘  └ context bar ─┘  └─ plan window ─┘  └─── right-aligned ───┘
+ *   ~/proj  42% ████████░░░░░░░░░░░░░░  ⏳5h 42% █████████░░░░░░░░░░ ↻2h15m  model-id ⚡high (git-branch)
+ *   └─ cwd ─┘  └──── context bar ────┘  └───── plan window ─────┘  └─ right-aligned ─┘
  *
  * - Working directory: ~-relative inside $HOME, otherwise the last two
  *   path segments; from ctx.sessionManager.getCwd().
@@ -22,8 +22,8 @@
  *   (tokens > window - RESERVE_TOKENS): red at the trigger point of the
  *   effective window, yellow halfway below it. Windows capped by the
  *   450k ceiling relax red to 65% of the effective window.
- * - Coding plan window (⏳5h 42% ██░░░ ↻2h15m): GLM coding plan (provider
- *   `zai-coding-cn`) 5-hour quota window as a 5-cell bar, polled every 5
+ * - Coding plan window (⏳5h 42% █████████░░░░░░░░░░ ↻2h15m): GLM coding plan (provider
+ *   `zai-coding-cn`) 5-hour quota window as a 20-cell bar (5% per cell), polled every 5
  *   minutes from the bigmodel.cn quota API with the stored credential
  *   (resolved via modelRegistry.getApiKeyForProvider — no direct auth.json
  *   reads). The bar renders in the mdLink blue family to stand apart from
@@ -87,11 +87,11 @@ function effectivePercent(tokens: number, contextWindow: number): number | null 
 	return (tokens / eff) * 100
 }
 
-/** 10-cell bar, color by context pressure against the given thresholds. */
+/** 20-cell bar (5% per cell), color by context pressure against the given thresholds. */
 function contextBar(pct: number, th: { red: number; yellow: number }, theme: Theme): string {
-	const filled = Math.round((Math.min(100, pct) / 100) * 10)
+	const filled = Math.round((Math.min(100, pct) / 100) * 20)
 	const color = pct >= th.red ? "error" : pct >= th.yellow ? "warning" : "success"
-	return theme.fg(color, "█".repeat(filled) + "░".repeat(10 - filled))
+	return theme.fg(color, "█".repeat(filled) + "░".repeat(20 - filled))
 }
 
 // ============================================================================
@@ -160,16 +160,20 @@ function formatCountdown(resetAt: number, now: number): string {
 }
 
 /**
- * "⏳5h 42% ██░░░ ↻2h15m" segment: 5-cell bar in the mdLink blue family to
- * stand apart from the green context bar; warning ≥70%, error ≥90% (alarm colors
+ * "⏳5h 42% █████████░░░░░░░░░░ ↻2h15m" segment: 20-cell bar (5% per cell) in
+ * the mdLink blue family to stand apart from the green context bar; warning
+ * ≥70%, error ≥90% (alarm colors
  * win over distinctiveness when the window runs low). Stale snapshots
  * render wholly dim; the countdown is always dim.
  */
 function planSegment(w: PlanWindow, now: number, theme: Theme): string {
 	const stale = now - w.capturedAt > PLAN_DIM_MS
 	const pct = Math.max(0, Math.min(100, Math.round(w.usedPercent)))
-	const filled = Math.round((pct / 100) * 5)
-	const bar = "█".repeat(filled) + "░".repeat(5 - filled)
+	// 20 cells (5% each), ceil: any nonzero usage must light ≥1 cell (a few
+	// percent would round to zero and look untouched; for a quota bar
+	// over-reporting is the safe direction — it warns slightly early).
+	const filled = Math.ceil((pct / 100) * 20)
+	const bar = "█".repeat(filled) + "░".repeat(20 - filled)
 	const countdown = w.resetAt !== undefined ? ` ↻${formatCountdown(w.resetAt, now)}` : ""
 	if (stale) return theme.fg("dim", `⏳5h ${pct}% ${bar}${countdown}`)
 	const color = pct >= 90 ? "error" : pct >= 70 ? "warning" : "mdLink"
