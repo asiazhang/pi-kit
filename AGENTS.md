@@ -4,7 +4,7 @@ pi extension package: Tencent CodeBuddy provider + custom footer, for the pi cod
 
 ## Commands
 
-- Done = `npm run typecheck` and `npm run lint` both pass — run both after every TypeScript edit. `npm run lint:fix` settles formatting; never hand-format (Biome owns `extensions/**` and `scripts/**`).
+- Done = `npm run typecheck`, `npm run lint`, and `npm test` all pass — run all three after every TypeScript edit. `npm run lint:fix` settles formatting; never hand-format (Biome owns `extensions/**` and `scripts/**`).
 - `npm run footer-preview [cols]` renders the footer line in isolation (`PI_THEME=light` for the light theme), no live session needed.
 
 ## Pointers

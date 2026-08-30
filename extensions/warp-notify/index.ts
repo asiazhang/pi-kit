@@ -26,6 +26,19 @@
  *   for free: the tab spins until the last run ends, and a child's
  *   spurious `stop` toast and `idle_prompt` are gone.
  *
+ *   Two invariants keep Warp's badge honest while runs compose:
+ *
+ *   - `stop` fires only at the counter's return to zero. When the outer
+ *     run ends with runs still live, its stop payload is HELD
+ *     (`deferredStop`) and flushed when the last run ends — an early
+ *     `stop` flips the badge to "done" while the tab keeps spinning.
+ *   - Subagent sessions never own announcements. A session whose
+ *     `session_start` fires while a run is live is a child (children
+ *     bind before their first `agent_start`; the main session's
+ *     new/resume/fork transitions carry distinct reasons). Children
+ *     refcount the spinner but never capture the query, never take
+ *     over the outer role, and so can never settle it mid-work.
+ *
  *   Runs are also attributed per session (`runsBySession`) so a child's
  *   `session_shutdown` releases only the child's own share. The child
  *   session is torn down right after its `agent_end` while the parent's
@@ -93,6 +106,15 @@ let pendingQuery = ""
 let runCtx: ExtensionContext | undefined
 let idleTimer: ReturnType<typeof setTimeout> | undefined
 let heartbeat: ReturnType<typeof setInterval> | undefined
+
+/** Stop payload built when the outer run settled with runs still live, held
+ *  until the last run ends — an early `stop` flips Warp's badge to "done"
+ *  while the work (and the tab spinner) is still going. */
+let deferredStop: WarpPayload | undefined
+
+/** Sessions that fired `session_start` while a run was live — subagent
+ *  children. They refcount the spinner but never own announcements. */
+const subagentSessions = new Set<string>()
 
 /** Live runs per session id — `session_shutdown` releases only the torn-down session's share. */
 const runsBySession = new Map<string, number>()
@@ -171,7 +193,16 @@ function cleanupSession(ctx: ExtensionContext): void {
 		}
 		return
 	}
+	flushDeferredStop()
 	cleanupAll()
+}
+
+/** Emit the outer run's held stop payload, if any — at the 0-crossing its
+ *  answer is the one Warp should report, whichever run ended last. */
+function flushDeferredStop(): void {
+	if (deferredStop === undefined) return
+	emit(deferredStop)
+	deferredStop = undefined
 }
 
 function cleanupAll(): void {
@@ -184,6 +215,8 @@ function cleanupAll(): void {
 	blockedCalls = 0
 	runsBySession.clear()
 	outerSettled = false
+	deferredStop = undefined
+	subagentSessions.clear()
 	pendingBlocking.clear()
 }
 
@@ -192,31 +225,45 @@ function cleanupAll(): void {
 //
 // "Outermost" is a SETTLABLE role, not just the 0→1 transition. Background
 // subagents (`run_in_background`) can outlive the run that spawned them, so
-// after the outer run settles (stop toast emitted) the counter may still be
-// positive and the spinner legitimately keeps spinning. Two consequences:
+// after the outer run settles the counter may still be positive and the
+// spinner legitimately keeps spinning. Three consequences:
 //
-//   - the next `agent_start` while `outerSettled` is a NEW outer run: it
-//     re-announces and takes over the heartbeat even though the counter
-//     never reached zero (a late background child holds it up);
+//   - the outer run's `stop` toast is HELD while runs remain live — the
+//     badge must not flip to done mid-work — and flushed when the counter
+//     reaches zero (by the last run's `agent_end` or a session cleanup);
+//   - the next `agent_start` of a NON-subagent session while `outerSettled`
+//     is a NEW outer run: it re-announces and takes over the heartbeat even
+//     though the counter never reached zero, dropping any held stop (the
+//     new outer's own settle will report instead);
 //   - a non-outer `agent_end` that drops the counter to zero is the LAST
-//     run finishing: stop the spinner and fire idle, but emit no stop
-//     toast — the outer run already reported.
+//     run finishing: stop the spinner, flush the held stop, fire idle.
+//
+// Subagent sessions are recognized, not guessed: pi-subagents binds each
+// child's extensions before prompting it, and a fresh child session fires
+// `session_start` with reason "startup" — the same reason as the main
+// session's boot, so "startup while a run is live" is exactly a child
+// binding (the main session's new/resume/fork carry distinct reasons).
 // ---------------------------------------------------------------------------
 
 export default function registerWarpNotify(pi: ExtensionAPI): void {
 	if (!isWarpTerminal() || !supportsStructured()) return
 
 	pi.on("session_start", async (event, ctx) => {
-		// Startup only, and only when no run is live — subagent sessions also
-		// fire session_start when their extensions bind (mid our run).
-		if (event.reason !== "startup" || activeRuns > 0) return
+		if (event.reason !== "startup") return
+		// A session binding extensions while a run is live is a subagent child.
+		// Mark it and never announce it — the main session already announced.
+		if (activeRuns > 0) {
+			subagentSessions.add(ctx.sessionManager.getSessionId())
+			return
+		}
 		emit(buildSessionStartPayload(ctx))
 	})
 
-	pi.on("before_agent_start", async (event) => {
+	pi.on("before_agent_start", async (event, ctx) => {
 		// Only capture the query of a run that will own the announcements: depth
 		// zero, or a new outer taking over after the previous one settled. A
 		// subagent's prompt must not overwrite the heartbeat's query.
+		if (subagentSessions.has(ctx.sessionManager.getSessionId())) return
 		if (activeRuns === 0 || outerSettled) pendingQuery = event.prompt ?? ""
 	})
 
@@ -224,9 +271,13 @@ export default function registerWarpNotify(pi: ExtensionAPI): void {
 		activeRuns++
 		const sessionId = ctx.sessionManager.getSessionId()
 		runsBySession.set(sessionId, (runsBySession.get(sessionId) ?? 0) + 1)
-		if (activeRuns === 1 || outerSettled) {
+		// A child run started while the outer role sits settled must NOT take
+		// over: its prompt is internal, and its end would settle — toast —
+		// while the real work is still going.
+		if (!subagentSessions.has(sessionId) && (activeRuns === 1 || outerSettled)) {
 			// New outer run (fresh or takeover): announce and own the heartbeat.
 			outerSettled = false
+			deferredStop = undefined
 			runCtx = ctx
 			emit(buildSessionStartPayload(ctx)) // defensive re-announce
 			emit(buildPromptSubmitPayload(ctx, pendingQuery))
@@ -254,12 +305,23 @@ export default function registerWarpNotify(pi: ExtensionAPI): void {
 		blockedCalls = 0
 		if (isOuter) {
 			const branch = ctx.sessionManager.getBranch()
-			emit(buildStopPayload(ctx, branch))
+			const stop = buildStopPayload(ctx, branch)
+			if (activeRuns === 0) {
+				emit(stop)
+			} else {
+				// Background runs outlive this one: hold the stop so Warp's badge
+				// stays "running" until the last run ends (a takeover drops it —
+				// the new outer's own settle will report instead).
+				deferredStop = stop
+			}
 			outerSettled = true
-		} // else: the outer run already reported; this is just the last child finishing.
-		stopHeartbeat()
+		} else if (activeRuns === 0) {
+			// The outer already settled; this is just the last child finishing.
+			flushDeferredStop()
+		}
 		cancelIdleTimer()
 		if (activeRuns === 0) {
+			stopHeartbeat()
 			stopSpinner()
 			// runCtx stays live for the idle timer below; the next outer start
 			// or a shutdown replaces/clears it.
@@ -272,8 +334,9 @@ export default function registerWarpNotify(pi: ExtensionAPI): void {
 			}, IDLE_DELAY_MS)
 			idleTimer.unref?.()
 		}
-		// else: background children still running — spinner keeps spinning, idle
-		// fires when the last of them ends (branch above).
+		// else: background runs still live — the heartbeat keeps re-announcing
+		// the query (no false idle) and the spinner keeps spinning; the held
+		// stop flushes when the last of them ends.
 	})
 
 	pi.on("tool_call", async (event, ctx) => {
@@ -300,7 +363,7 @@ export default function registerWarpNotify(pi: ExtensionAPI): void {
 		if (blockedCalls > 0) blockedCalls--
 		if (blockedCalls > 0) return // more questions still outstanding
 		emit(buildToolCompletePayload(ctx, event.toolName, pending?.input))
-		if (activeRuns > 0 && !outerSettled) startHeartbeat() // aborted runs settle in agent_end
+		if (activeRuns > 0) startHeartbeat() // aborted runs settle in agent_end
 		syncSpinner()
 	})
 
