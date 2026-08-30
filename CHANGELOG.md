@@ -5,6 +5,16 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.4.3] - 2026-08-30
+
+### Fixed
+
+- **warp-notify**：修复外层 run 结束但后台子代理仍在运行时提前发 `stop` toast 的问题——stop payload 被持有（`deferredStop`），待最后一个 run 结束（`agent_end` 或 `session_shutdown` 过零）时 flush，且 flush 报告的是**外层** run 的问答快照而非最后一个子代理的内部文本，Warp 徽标不再在 spinner 仍在转时先翻成"完成"。子代理会话改为显式识别：`session_start`（reason startup）在 run 进行中到达即标记为 child（`subagentSessions`，pi-subagents 在提示前绑定扩展），child 只递增计数、永不 capture prompt、不接管 outer 角色，其结束也因此无法错误结算 outer；settled 状态下 child 的 `agent_start` 不再误触发新 outer 接管。`tool_complete` 后无条件恢复心跳。
+
+### Added
+
+- **test**：新增 warp-notify 状态机测试（bun test，7 组用例覆盖 stop 持有/flush、子代理不接管、接管重报、过零 flush、阻塞问答），`package.json` 增加 `test` 脚本并纳入 Done 标准。
+
 ## [0.4.2] - 2026-08-30
 
 ### Fixed
