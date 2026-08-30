@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.4.1] - 2026-08-30
+
+### Fixed
+
+- **footer**：coding plan 条 5 格 → 20 格（每格 5%）且填充改用 `Math.ceil`——低占比（如 8%）按 `Math.round` 会归零，整条全空看不出进度；上下文条 10 格 → 20 格对齐；`footer-preview` 镜像同步并新增 8% 预览用例
+
 ## [0.4.0] - 2026-08-30
 
 ### Fixed
