@@ -7,7 +7,13 @@
 
 ## [0.4.0] - 2026-08-30
 
+### Fixed
+
+- **warp-notify**：修复 OSC 777 的 title 位误写为 agent id（`pi`）——Warp 只在 title 位为 `warp://cli-agent` URI 时才把 body 解析为结构化 cli-agent 事件，否则退化为通用 toast 直接显示原始 JSON（启动后首条通知即是一坨未解析的 payload）
+
 ### Changed
+
+- **warp-notify**：按上游 rpiv-warp 的文件结构拆分为子目录 `extensions/warp-notify/`（`protocol.ts` 探测/协议协商、`payload.ts` 载荷组装、`warp-notify.ts` OSC 传输、`title-spinner.ts` 标题动画、`config.ts` 可调参数、`index.ts` 注册 + 状态机），除 refcount 状态机（SubAgent spinner 修复）外与上游逐文件对齐
 
 - **docs**：README 精简为纯用户视角，删除网关适配表、实现机制与内部参数；AGENTS.md 改为 Pointers 结构，收录 SNAPSHOT 维护指引
 

@@ -10,7 +10,7 @@ pi extension package: Tencent CodeBuddy provider + custom footer, for the pi cod
 ## Pointers
 
 - `CONTEXT.md` — project glossary (上下文用量, coding plan, 配额窗口, 窗口重置); use its terms in comments, docs, and UI strings.
-- `extensions/warp-notify.ts` — Warp notifications. Run/block state is refcounted and shared across parent + subagent instances (ESM caching); read the state machine in the file header before adding or changing lifecycle handlers.
+- `extensions/warp-notify/` — Warp notifications, file layout mirrors upstream rpiv-warp (`protocol.ts` detection, `payload.ts` builders, `warp-notify.ts` OSC transport, `title-spinner.ts`, `config.ts`, `index.ts` registration + state machine). Run/block state is refcounted and shared across parent + subagent instances (ESM caching); read the state machine in `index.ts`'s header before adding or changing lifecycle handlers.
 - `extensions/tc-footer.ts` — status-line rendering. `scripts/footer-preview.mjs` mirrors its render functions; a render-logic change updates the mirrors in the same change, then re-runs `footer-preview`.
 - `extensions/tencent-copilot.ts` — provider + model catalog. Models are maintained as the `SNAPSHOT` tuple array; adding a model is one line.
 
