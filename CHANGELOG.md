@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.4.2] - 2026-08-30
+
+### Fixed
+
+- **warp-notify**：修复子代理（Agent 工具）会话销毁时 `session_shutdown` 无条件调用 `cleanupAll()` 清空共享状态的问题——主会话 run 仍在执行但动画已被停掉且无 `agent_start` 可重启，tab 标题静止、心跳中断、`runCtx` 悬空导致后续 stop toast 丢失。现按会话记账（`runsBySession`）：子会话销毁只释放自己的份额，其它 run 存活时共享状态原封不动；阻塞调用条目携带 `sessionId` 随死会话排干；被销毁会话持有 outer 角色时交还角色而非清零。
+
 ## [0.4.1] - 2026-08-30
 
 ### Fixed
