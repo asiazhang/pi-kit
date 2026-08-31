@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.6.0] - 2026-08-31
+
+### Added
+
+- **tencent-copilot**：模型目录新增 GLM-5.3 Flash（`glm-5.3-flash-ioa`，1M 输入 / 48K 输出），与 GLM-5.3 同一批次可用
+
 ## [0.5.0] - 2026-08-31
 
 ### Added
