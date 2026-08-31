@@ -58,6 +58,12 @@ function contextBar(pct, th) {
 	return theme.fg(color, "█".repeat(filled) + "░".repeat(20 - filled))
 }
 
+/** Mirror of MODEL_COLORS in extensions/tc-footer.ts — keep in sync. */
+const MODEL_COLORS = {
+	"tencent-copilot": "accent",
+	"zai-coding-cn": "thinkingXhigh",
+}
+
 /** Mirror of PLAN_DIM_MS in extensions/tc-footer.ts — keep in sync. */
 const PLAN_DIM_MS = 10 * 60_000
 
@@ -98,7 +104,17 @@ function planSegment(ws, now) {
 }
 
 /** Mirror of render() in extensions/tc-footer.ts — keep in sync. */
-function renderLine(cwd, tokens, contextWindow, model, thinking, branch, planWindow, width) {
+function renderLine(
+	cwd,
+	tokens,
+	contextWindow,
+	model,
+	thinking,
+	branch,
+	planWindow,
+	width,
+	provider = "",
+) {
 	const left = theme.fg("dim", formatCwd(cwd))
 	let context = ""
 	if (tokens !== null && contextWindow > 0) {
@@ -112,11 +128,13 @@ function renderLine(cwd, tokens, contextWindow, model, thinking, branch, planWin
 		}
 	}
 	const think = thinking ? ` ${theme.fg("accent", `⚡${thinking}`)}` : ""
+	const modelColor = MODEL_COLORS[provider]
+	const modelPart = modelColor ? theme.fg(modelColor, model) : model
 	const plan = planWindow ? planSegment(planWindow, Date.now()) : ""
 	const branchPart = branch ? theme.fg("dim", ` (${branch})`) : ""
 	// Narrow terminals drop the plan segment before the model id.
 	const build = (withPlan) => {
-		const right = [withPlan ? plan : "", model + think, branchPart].filter(Boolean).join(" ")
+		const right = [withPlan ? plan : "", modelPart + think, branchPart].filter(Boolean).join(" ")
 		const pad = " ".repeat(
 			Math.max(1, width - visibleWidth(left) - visibleWidth(context) - visibleWidth(right)),
 		)
@@ -140,9 +158,18 @@ const plan = (fiveHourPct, ageMin = 0, weeklyPct = null) => {
 	return ws
 }
 
-// [label, tokens, contextWindow, model, thinking, branch, planWindow]
+// [label, tokens, contextWindow, model, thinking, branch, planWindow, provider]
 const cases = [
-	["128k window @ 30k (green)", 30_000, 131_072, "hunyuan-t1-latest", "high", "master", null],
+	[
+		"128k window @ 30k (green)",
+		30_000,
+		131_072,
+		"hunyuan-t1-latest",
+		"high",
+		"master",
+		null,
+		"tencent-copilot",
+	],
 	[
 		"128k window @ 30k + plan 8% (blue, 2 lit cells)",
 		30_000,
@@ -151,6 +178,7 @@ const cases = [
 		"high",
 		"master",
 		plan(8),
+		"zai-coding-cn",
 	],
 	[
 		"128k window @ 30k + plan 42% (green + blue)",
@@ -160,6 +188,7 @@ const cases = [
 		"high",
 		"master",
 		plan(42),
+		"zai-coding-cn",
 	],
 	[
 		"128k window @ 70k + plan 75% (yellow + yellow)",
@@ -169,6 +198,7 @@ const cases = [
 		"high",
 		"feature/footer",
 		plan(75),
+		"zai-coding-cn",
 	],
 	[
 		"128k window @ 116k + plan 95% (red + red, near compaction)",
@@ -178,8 +208,18 @@ const cases = [
 		"off",
 		"master",
 		plan(95),
+		"zai-coding-cn",
 	],
-	["200k window @ 100k (yellow)", 100_000, 204_800, "hunyuan-t1-latest", "high", "master", null],
+	[
+		"200k window @ 100k (yellow)",
+		100_000,
+		204_800,
+		"hunyuan-t1-latest",
+		"high",
+		"master",
+		null,
+		"tencent-copilot",
+	],
 	[
 		"1M window @ 200k (yellow — red is 65% of effective window)",
 		200_000,
@@ -188,6 +228,7 @@ const cases = [
 		null,
 		"main",
 		null,
+		"anthropic",
 	],
 	[
 		"1M window @ 300k (yellow — red is 65% of effective window)",
@@ -197,6 +238,7 @@ const cases = [
 		"low",
 		"main",
 		null,
+		"openai",
 	],
 	[
 		"1M window @ 440k (red — effective window nearly full)",
@@ -206,8 +248,9 @@ const cases = [
 		"high",
 		"main",
 		null,
+		"openai",
 	],
-	["non-reasoning model, usage unknown", null, 131_072, "gpt-4o", null, "main", null],
+	["non-reasoning model, usage unknown", null, 131_072, "gpt-4o", null, "main", null, "openai"],
 	[
 		"5h 12% + weekly 92% (dual window — weekly ceiling hidden by a healthy 5h)",
 		30_000,
@@ -216,6 +259,7 @@ const cases = [
 		"high",
 		"master",
 		plan(12, 0, 92),
+		"zai-coding-cn",
 	],
 	[
 		"5h 42% + weekly 30% (dual window, both healthy)",
@@ -225,6 +269,7 @@ const cases = [
 		"high",
 		"master",
 		plan(42, 0, 30),
+		"zai-coding-cn",
 	],
 	[
 		"5h 8% + weekly 85% (dual window, weekly warning)",
@@ -234,6 +279,7 @@ const cases = [
 		"high",
 		"master",
 		plan(8, 0, 85),
+		"zai-coding-cn",
 	],
 	[
 		"plan stale >10min (whole segment dim)",
@@ -243,13 +289,28 @@ const cases = [
 		"high",
 		"master",
 		plan(42, 15),
+		"zai-coding-cn",
+	],
+	[
+		"tencent-copilot model id in accent teal (no plan segment)",
+		30_000,
+		131_072,
+		"hunyuan-t1-latest",
+		"high",
+		"master",
+		null,
+		"tencent-copilot",
 	],
 ]
 
-for (const [label, tokens, contextWindow, model, thinking, branch, planWindow] of cases) {
+for (const [label, tokens, contextWindow, model, thinking, branch, planWindow, provider] of cases) {
 	console.log(`${label}:`)
-	console.log(renderLine(cwd, tokens, contextWindow, model, thinking, branch, planWindow, width))
+	console.log(
+		renderLine(cwd, tokens, contextWindow, model, thinking, branch, planWindow, width, provider),
+	)
 	console.log()
 }
 console.log(`narrow (50 cols) — plan segment dropped before the model id:`)
-console.log(renderLine(cwd, 116_000, 131_072, "glm-5.3", "high", "master", plan(42), 50))
+console.log(
+	renderLine(cwd, 116_000, 131_072, "glm-5.3", "high", "master", plan(42), 50, "zai-coding-cn"),
+)

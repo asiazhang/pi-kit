@@ -12,6 +12,11 @@
  *   ~/proj  42% ████████░░░░░░░░░░░░░░  ⏳5h 12% █████████░░░░░░░░ ↻2h15m  ⏳7d 92% ███████████████████░ ↻3d  model-id ⚡high (git-branch)
  *   └─ cwd ─┘  └──── context bar ────┘  └────── plan windows (5h + 7d) ──────┘  └─ right-aligned ─┘
  *
+ * - Model-id brand colors by provider: tencent-copilot (CodeBuddy gateway)
+ *   renders accent teal; the GLM coding plan (`zai-coding-cn`) renders
+ *   thinkingXhigh purple (zhipu brand family, one step deeper than the 7-day
+ *   gauge's thinkingHigh so they don't collide). Other providers keep the
+ *   default text color.
  * - Working directory: ~-relative inside $HOME, otherwise the last two
  *   path segments; from ctx.sessionManager.getCwd().
  * - Context bar uses ctx.getContextUsage(). Percent is computed against the
@@ -98,6 +103,22 @@ function contextBar(pct: number, th: { red: number; yellow: number }, theme: The
 	const filled = Math.round((Math.min(100, pct) / 100) * 20)
 	const color = pct >= th.red ? "error" : pct >= th.yellow ? "warning" : "success"
 	return theme.fg(color, "█".repeat(filled) + "░".repeat(20 - filled))
+}
+
+// ============================================================================
+// Model-id brand colors (by provider)
+// ============================================================================
+
+/**
+ * Model-id brand colors by provider. tencent-copilot (CodeBuddy gateway)
+ * reads as accent teal; the GLM coding plan (`zai-coding-cn`) as thinkingXhigh
+ * purple — same family as the 7-day quota gauge's thinkingHigh, one step
+ * deeper so the two read as separate things. Providers not listed keep the
+ * default text color.
+ */
+const MODEL_COLORS: Partial<Record<string, ThemeColor>> = {
+	"tencent-copilot": "accent",
+	"zai-coding-cn": "thinkingXhigh",
 }
 
 // ============================================================================
@@ -312,7 +333,10 @@ export default function (pi: ExtensionAPI) {
 							: ""
 
 					const branch = footerData.getGitBranch()
-					const model = ctx.model?.id ?? "no-model"
+					const provider = ctx.model?.provider ?? ""
+					const modelId = ctx.model?.id ?? "no-model"
+					const modelColor = MODEL_COLORS[provider]
+					const model = modelColor ? theme.fg(modelColor, modelId) : modelId
 					// Plan segment only while the plan provider is active.
 					const plan =
 						ctx.model?.provider === PLAN_PROVIDER && planWindow
