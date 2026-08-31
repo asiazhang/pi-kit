@@ -103,9 +103,8 @@ test("outer settles with a background subagent live: stop waits for the last run
 	await fire("agent_end", {}, child)
 	expect(count("stop")).toBe(1)
 	await drainIdle()
-	// Two session_starts: startup + agent_start's defensive re-announce.
+	// One session_start: agent_start's announce, paired with prompt_submit.
 	expect(osc777.map((e) => e.event)).toEqual([
-		"session_start",
 		"session_start",
 		"prompt_submit",
 		"stop",
@@ -141,7 +140,6 @@ test("plain turn without subagents is unchanged", async () => {
 	await fire("agent_end", {}, main)
 	await drainIdle()
 	expect(osc777.map((e) => e.event)).toEqual([
-		"session_start",
 		"session_start",
 		"prompt_submit",
 		"stop",

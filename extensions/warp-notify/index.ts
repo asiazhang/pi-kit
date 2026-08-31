@@ -251,12 +251,14 @@ export default function registerWarpNotify(pi: ExtensionAPI): void {
 	pi.on("session_start", async (event, ctx) => {
 		if (event.reason !== "startup") return
 		// A session binding extensions while a run is live is a subagent child.
-		// Mark it and never announce it — the main session already announced.
+		// Mark it; it must never take over announcements. We deliberately do NOT
+		// announce here: Warp's status enum has no "idle" state, so a boot-time
+		// `session_start` leaves the tab pinned on "In progress" until the first
+		// `stop`. The announce happens only in `agent_start`, paired with
+		// `prompt_submit`, when a run actually begins.
 		if (activeRuns > 0) {
 			subagentSessions.add(ctx.sessionManager.getSessionId())
-			return
 		}
-		emit(buildSessionStartPayload(ctx))
 	})
 
 	pi.on("before_agent_start", async (event, ctx) => {
@@ -279,7 +281,7 @@ export default function registerWarpNotify(pi: ExtensionAPI): void {
 			outerSettled = false
 			deferredStop = undefined
 			runCtx = ctx
-			emit(buildSessionStartPayload(ctx)) // defensive re-announce
+			emit(buildSessionStartPayload(ctx)) // the only session_start — Warp builds the session (In progress) right before this run
 			emit(buildPromptSubmitPayload(ctx, pendingQuery))
 			cancelIdleTimer() // a previous turn's pending idle_prompt is obsolete
 			startHeartbeat()
