@@ -90,6 +90,7 @@ const SNAPSHOT: Array<[string, string, number, number, boolean, "all" | null]> =
 	["gpt-5.6-terra", "GPT-5.6 Terra", 1000000, 128000, true, "all"],
 	["gpt-5.6-luna", "GPT-5.6 Luna", 1000000, 128000, true, "all"],
 	["glm-5.3-ioa", "GLM-5.3", 1000000, 48000, true, "all"],
+	["glm-5.3-flash-ioa", "GLM-5.3 Flash", 1000000, 48000, true, "all"],
 	["minimax-m3-ioa", "MiniMax M3", 512000, 48000, true, "all"],
 	["kimi-k3-ioa", "Kimi K3", 1000000, 32000, true, "all"],
 	["hy3-ioa", "Hy3", 192000, 64000, true, "all"],
