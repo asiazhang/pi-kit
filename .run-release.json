@@ -1,0 +1,8 @@
+{
+	"versionFiles": [
+		"package.json"
+	],
+	"changelog": "CHANGELOG.md",
+	"tagPrefix": "v",
+	"trunkBranch": "main"
+}
