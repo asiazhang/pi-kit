@@ -5,6 +5,16 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.7.0] - 2026-09-01
+
+### Added
+
+- **tc-footer**：model-id 按 provider 上色——tencent-copilot（CodeBuddy 网关）显示为 accent 青色，GLM coding plan（`zai-coding-cn`）显示为 thinkingXhigh 紫色（与 7 天额度的 thinkingHigh 同族、深一档避免混淆），其它 provider 保持默认文字色；`footer-preview` 镜像同步更新
+
+### Fixed
+
+- **warp-notify**：修复启动时 announce `session_start` 使 Warp tab 一直卡在 "In progress" 的问题——Warp 状态枚举无 idle，boot（startup）的 session_start 不再 announce，会话 announce 收敛到 `agent_start`（与 `prompt_submit` 配对，在 run 真正开始时由 Warp 构建 "In progress"）；子代理会话启动时仍标记，只是不再 announce
+
 ## [0.6.0] - 2026-08-31
 
 ### Added
