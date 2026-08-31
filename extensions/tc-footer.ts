@@ -9,8 +9,8 @@
  *
  * Layout (single line, ANSI-safe truncation on narrow terminals):
  *
- *   ~/proj  42% ████████░░░░░░░░░░░░░░  ⏳5h 42% █████████░░░░░░░░░░ ↻2h15m  model-id ⚡high (git-branch)
- *   └─ cwd ─┘  └──── context bar ────┘  └───── plan window ─────┘  └─ right-aligned ─┘
+ *   ~/proj  42% ████████░░░░░░░░░░░░░░  ⏳5h 12% █████████░░░░░░░░ ↻2h15m  ⏳7d 92% ███████████████████░ ↻3d  model-id ⚡high (git-branch)
+ *   └─ cwd ─┘  └──── context bar ────┘  └────── plan windows (5h + 7d) ──────┘  └─ right-aligned ─┘
  *
  * - Working directory: ~-relative inside $HOME, otherwise the last two
  *   path segments; from ctx.sessionManager.getCwd().
@@ -22,15 +22,16 @@
  *   (tokens > window - RESERVE_TOKENS): red at the trigger point of the
  *   effective window, yellow halfway below it. Windows capped by the
  *   450k ceiling relax red to 65% of the effective window.
- * - Coding plan window (⏳5h 42% █████████░░░░░░░░░░ ↻2h15m): GLM coding plan (provider
- *   `zai-coding-cn`) 5-hour quota window as a 20-cell bar (5% per cell), polled every 5
- *   minutes from the bigmodel.cn quota API with the stored credential
+ * - Coding plan windows (⏳5h 42% █████████░░░░░░░░ ↻2h15m  ⏳7d 92% ███████████████████░ ↻3d): GLM
+ *   coding plan (provider `zai-coding-cn`) quota windows as 20-cell bars (5% per cell),
+ *   polled every 5 minutes from the bigmodel.cn quota API with the stored credential
  *   (resolved via modelRegistry.getApiKeyForProvider — no direct auth.json
- *   reads). The bar renders in the mdLink blue family to stand apart from
- *   the green context bar; warning ≥70%, error ≥90% — alarm colors win over
- *   distinctiveness when the window runs low. Shown only while that
- *   provider is active; other providers see nothing. Data older than 10
- *   minutes renders dim. Narrow terminals drop it before the model id.
+ *   reads). Two independent gauges: the 5-hour window (unit 3, rolling throttle) and the
+ *   7-day window (unit 6, weekly hard ceiling). Healthy-state baseline colors differ
+ *   (5h = mdLink blue, 7d = thinkingHigh purple) so they read as separate gauges; warning
+ *   ≥70%, error ≥90% — alarm colors win over distinctiveness when a window runs low.
+ *   Shown only while that provider is active; other providers see nothing. Data older
+ *   than 10 minutes renders dim.
  * - Git branch re-renders reactively via footerData.onBranchChange().
  * - Thinking level (⚡high) shown when the model supports reasoning;
  *   re-renders reactively via the thinking_level_select event. The plan
@@ -40,7 +41,12 @@
  */
 
 import { isAbsolute, relative, resolve, sep } from "node:path"
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent"
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	Theme,
+	ThemeColor,
+} from "@earendil-works/pi-coding-agent"
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui"
 
 /** Shorten cwd for display: ~-relative inside $HOME, otherwise the last two path segments. */
@@ -113,39 +119,57 @@ const PLAN_DIM_MS = 10 * 60_000
 /** Quota fetch timeout. */
 const PLAN_TIMEOUT_MS = 10_000
 
-/** One quota-window snapshot. */
+/** One quota-window reading: used percent + reset instant. */
 interface PlanWindow {
 	/** Used percent 0–100 (response `percentage`). */
 	usedPercent: number
 	/** Window reset instant (epoch ms, response `nextResetTime`). */
 	resetAt?: number
+}
+
+/** Combined quota snapshot: the rolling 5h window and the weekly 7-day window. */
+interface PlanWindows {
+	/** 5h window (unit 3) — rolling throttle. */
+	fiveHour?: PlanWindow
+	/** 7-day window (unit 6) — weekly hard ceiling. */
+	weekly?: PlanWindow
 	/** When this snapshot was fetched (Date.now()). */
 	capturedAt: number
 }
 
-/**
- * Extract the 5h window (unit 3) from the quota response. Verified live
- * 2026-08-28 — entries look like
- * `{ type: "CREDIT_LIMIT", unit: 3, number: 5, percentage: 17, nextResetTime: 1788012323908 }`
- * (`unit: 6` is the weekly window, not shown; `type` is "CREDIT_LIMIT", not
- * "TOKENS_LIMIT" as some older parsers assumed).
- */
-function parsePlanWindow(json: unknown): PlanWindow | undefined {
-	const limits = (json as { data?: { limits?: Array<Record<string, unknown>> } } | null)?.data
-		?.limits
-	if (!Array.isArray(limits)) return undefined
+/** Extract one window (by unit) from the quota limits array. */
+function toPlanWindow(
+	limits: Array<Record<string, unknown>>,
+	unit: number,
+): PlanWindow | undefined {
 	for (const limit of limits) {
 		if (!limit || typeof limit !== "object") continue
 		const pct = limit.percentage
-		if (limit.unit !== 3 || typeof pct !== "number") continue
+		if (limit.unit !== unit || typeof pct !== "number") continue
 		const reset = limit.nextResetTime
 		return {
 			usedPercent: pct,
 			resetAt: typeof reset === "number" && reset > 0 ? reset : undefined,
-			capturedAt: Date.now(),
 		}
 	}
 	return undefined
+}
+
+/**
+ * Extract both windows from the quota response. Verified live 2026-08-28 —
+ * entries look like
+ * `{ type: "CREDIT_LIMIT", unit: 3, number: 5, percentage: 17, nextResetTime: 1788012323908 }`
+ * (`unit: 3` is the 5h window, `unit: 6` the weekly; `type` is "CREDIT_LIMIT", not
+ * "TOKENS_LIMIT" as some older parsers assumed).
+ */
+function parsePlanWindows(json: unknown): PlanWindows | undefined {
+	const limits = (json as { data?: { limits?: Array<Record<string, unknown>> } } | null)?.data
+		?.limits
+	if (!Array.isArray(limits)) return undefined
+	const fiveHour = toPlanWindow(limits, 3)
+	const weekly = toPlanWindow(limits, 6)
+	if (!fiveHour && !weekly) return undefined
+	return { fiveHour, weekly, capturedAt: Date.now() }
 }
 
 /** Countdown to a reset instant: "2h15m", "3d4h", "now". */
@@ -159,15 +183,16 @@ function formatCountdown(resetAt: number, now: number): string {
 	return hours >= 1 ? `${hours}h${minutes}m` : `${minutes}m`
 }
 
-/**
- * "⏳5h 42% █████████░░░░░░░░░░ ↻2h15m" segment: 20-cell bar (5% per cell) in
- * the mdLink blue family to stand apart from the green context bar; warning
- * ≥70%, error ≥90% (alarm colors
- * win over distinctiveness when the window runs low). Stale snapshots
- * render wholly dim; the countdown is always dim.
- */
-function planSegment(w: PlanWindow, now: number, theme: Theme): string {
-	const stale = now - w.capturedAt > PLAN_DIM_MS
+/** One full-width quota bar: prefix label + 20-cell bar (5% per cell) + reset countdown. */
+function quotaBar(
+	label: string,
+	w: PlanWindow | undefined,
+	baseline: ThemeColor,
+	stale: boolean,
+	now: number,
+	theme: Theme,
+): string {
+	if (!w) return ""
 	const pct = Math.max(0, Math.min(100, Math.round(w.usedPercent)))
 	// 20 cells (5% each), ceil: any nonzero usage must light ≥1 cell (a few
 	// percent would round to zero and look untouched; for a quota bar
@@ -175,9 +200,25 @@ function planSegment(w: PlanWindow, now: number, theme: Theme): string {
 	const filled = Math.ceil((pct / 100) * 20)
 	const bar = "█".repeat(filled) + "░".repeat(20 - filled)
 	const countdown = w.resetAt !== undefined ? ` ↻${formatCountdown(w.resetAt, now)}` : ""
-	if (stale) return theme.fg("dim", `⏳5h ${pct}% ${bar}${countdown}`)
-	const color = pct >= 90 ? "error" : pct >= 70 ? "warning" : "mdLink"
-	return theme.fg(color, `⏳5h ${pct}% ${bar}`) + (countdown ? theme.fg("dim", countdown) : "")
+	if (stale) return theme.fg("dim", `${label} ${pct}% ${bar}${countdown}`)
+	const color = pct >= 90 ? "error" : pct >= 70 ? "warning" : baseline
+	return theme.fg(color, `${label} ${pct}% ${bar}`) + (countdown ? theme.fg("dim", countdown) : "")
+}
+
+/**
+ * "⏳5h 42% █████████░░░░░░░░ ↻2h15m  ⏳7d 92% ███████████████████░ ↻3d": two independent
+ * 20-cell bars (5% per cell). Healthy-state baselines differ (5h = mdLink blue,
+ * 7d = thinkingHigh purple) so they read as separate gauges; warning ≥70%, error
+ * ≥90% — alarm colors win over distinctiveness when a window runs low. A shared
+ * snapshot means both turn dim together when stale; each reset countdown is dim.
+ */
+function planSegment(ws: PlanWindows, now: number, theme: Theme): string {
+	const stale = now - ws.capturedAt > PLAN_DIM_MS
+	const parts = [
+		quotaBar("⏳5h", ws.fiveHour, "mdLink", stale, now, theme),
+		quotaBar("⏳7d", ws.weekly, "thinkingHigh", stale, now, theme),
+	].filter(Boolean)
+	return parts.join(" ")
 }
 
 export default function (pi: ExtensionAPI) {
@@ -189,7 +230,7 @@ export default function (pi: ExtensionAPI) {
 
 	// GLM coding plan 5h-window state: latest snapshot, resolved credential,
 	// single in-flight guard, and the 5-minute refresh timer (session-scoped).
-	let planWindow: PlanWindow | undefined
+	let planWindow: PlanWindows | undefined
 	let planKey: string | undefined
 	let planInFlight = false
 	let planTimer: ReturnType<typeof setInterval> | undefined
@@ -211,7 +252,7 @@ export default function (pi: ExtensionAPI) {
 				signal: AbortSignal.timeout(PLAN_TIMEOUT_MS),
 			})
 			if (!res.ok) return
-			const next = parsePlanWindow(await res.json())
+			const next = parsePlanWindows(await res.json())
 			if (next) {
 				planWindow = next
 				requestFooterRender?.()

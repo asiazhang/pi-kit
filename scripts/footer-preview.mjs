@@ -72,9 +72,9 @@ function formatCountdown(resetAt, now) {
 	return hours >= 1 ? `${hours}h${minutes}m` : `${minutes}m`
 }
 
-/** Mirror of planSegment() in extensions/tc-footer.ts — keep in sync. */
-function planSegment(w, now) {
-	const stale = now - w.capturedAt > PLAN_DIM_MS
+/** Mirror of quotaBar() in extensions/tc-footer.ts — keep in sync. */
+function quotaBar(label, w, baseline, stale, now) {
+	if (!w) return ""
 	const pct = Math.max(0, Math.min(100, Math.round(w.usedPercent)))
 	// 20 cells (5% each), ceil: any nonzero usage must light ≥1 cell (a few
 	// percent would round to zero and look untouched; for a quota bar
@@ -82,9 +82,19 @@ function planSegment(w, now) {
 	const filled = Math.ceil((pct / 100) * 20)
 	const bar = "█".repeat(filled) + "░".repeat(20 - filled)
 	const countdown = w.resetAt !== undefined ? ` ↻${formatCountdown(w.resetAt, now)}` : ""
-	if (stale) return theme.fg("dim", `⏳5h ${pct}% ${bar}${countdown}`)
-	const color = pct >= 90 ? "error" : pct >= 70 ? "warning" : "mdLink"
-	return theme.fg(color, `⏳5h ${pct}% ${bar}`) + (countdown ? theme.fg("dim", countdown) : "")
+	if (stale) return theme.fg("dim", `${label} ${pct}% ${bar}${countdown}`)
+	const color = pct >= 90 ? "error" : pct >= 70 ? "warning" : baseline
+	return theme.fg(color, `${label} ${pct}% ${bar}`) + (countdown ? theme.fg("dim", countdown) : "")
+}
+
+/** Mirror of planSegment() in extensions/tc-footer.ts — keep in sync. */
+function planSegment(ws, now) {
+	const stale = now - ws.capturedAt > PLAN_DIM_MS
+	const parts = [
+		quotaBar("⏳5h", ws.fiveHour, "mdLink", stale, now),
+		quotaBar("⏳7d", ws.weekly, "thinkingHigh", stale, now),
+	].filter(Boolean)
+	return parts.join(" ")
 }
 
 /** Mirror of render() in extensions/tc-footer.ts — keep in sync. */
@@ -118,12 +128,17 @@ function renderLine(cwd, tokens, contextWindow, model, thinking, branch, planWin
 const width = Number(process.argv[2]) || 80
 const cwd = process.cwd()
 
-// Plan-window mock: usedPercent, reset 2h15m out, fetched `ageMin` ago.
-const plan = (usedPercent, ageMin = 0) => ({
-	usedPercent,
-	resetAt: Date.now() + 135 * 60_000,
-	capturedAt: Date.now() - ageMin * 60_000,
-})
+// Plan-window mock: 5h + 7d windows (usedPercent, reset+ageMin for the 5h, weeklyPct/resetMs for the 7d).
+const plan = (fiveHourPct, ageMin = 0, weeklyPct = null) => {
+	const ws = {
+		capturedAt: Date.now() - ageMin * 60_000,
+		fiveHour: { usedPercent: fiveHourPct, resetAt: Date.now() + 135 * 60_000 },
+	}
+	if (weeklyPct !== null) {
+		ws.weekly = { usedPercent: weeklyPct, resetAt: Date.now() + 3 * 86_400_000 }
+	}
+	return ws
+}
 
 // [label, tokens, contextWindow, model, thinking, branch, planWindow]
 const cases = [
@@ -193,6 +208,33 @@ const cases = [
 		null,
 	],
 	["non-reasoning model, usage unknown", null, 131_072, "gpt-4o", null, "main", null],
+	[
+		"5h 12% + weekly 92% (dual window — weekly ceiling hidden by a healthy 5h)",
+		30_000,
+		131_072,
+		"glm-5.3",
+		"high",
+		"master",
+		plan(12, 0, 92),
+	],
+	[
+		"5h 42% + weekly 30% (dual window, both healthy)",
+		30_000,
+		131_072,
+		"glm-5.3",
+		"high",
+		"master",
+		plan(42, 0, 30),
+	],
+	[
+		"5h 8% + weekly 85% (dual window, weekly warning)",
+		30_000,
+		131_072,
+		"glm-5.3",
+		"high",
+		"master",
+		plan(8, 0, 85),
+	],
 	[
 		"plan stale >10min (whole segment dim)",
 		30_000,
