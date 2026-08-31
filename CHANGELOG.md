@@ -5,6 +5,16 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.5.0] - 2026-08-31
+
+### Added
+
+- **footer**：新增 GLM coding plan 7 天配额窗口（`⏳7d 92% ███████████████████░ ↻3d`）显示，与 5h 窗口（`⏳5h`）作为两个独立仪表盘并列展示——5h 是滚动节流阀（mdLink 蓝基线），7 天是全周硬上限（thinkingHigh 紫灰基线），共用同一套告警阈值（≥70% 黄、≥90% 红），同一快照同时转暗、各自倒计时 dim；数据来自同一次 bigmodel.cn 配额接口轮询（`unit: 3` + `unit: 6` 双窗口一次解析），`footer-preview` 镜像同步更新；决策记录见 `docs/adr/0001-footer-dual-quota-windows.md`
+
+### Changed
+
+- **docs**：CONTEXT.md 术语表更新——5h 窗口定义改为「随消耗滚动刷新的节流窗口」，新增「7 天窗口」词条（全周硬上限，以 ⏳7d 展示），不再用「周窗口」指称
+
 ## [0.4.3] - 2026-08-30
 
 ### Fixed
