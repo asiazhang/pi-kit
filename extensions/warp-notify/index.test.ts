@@ -210,3 +210,32 @@ test("blocking question parks and drains: question_asked, tool_complete, then st
 	expect(count("stop")).toBe(1)
 	await teardown(main)
 })
+
+test("/new while a run is still counted: teardown resets so the fresh session settles", async () => {
+	const main = makeCtx("t8-main", "q1", "a1")
+	const child = makeCtx("t8-child")
+	const fresh = makeCtx("t8-fresh", "q2", "a2")
+	await fire("session_start", { reason: "startup" }, main)
+	await startRun(main, "q1")
+	// A child binds mid-run — the original upstream subagent case.
+	await fire("session_start", { reason: "startup" }, child)
+	await startRun(child, "child internal")
+	// Outer settles with the child still live: stop is held (no early "done").
+	await fire("agent_end", {}, main)
+	expect(count("stop")).toBe(0)
+	// User presses /new: the top-level session (and its untracked child subtree)
+	// is discarded. The shared counter must reset, or the fresh session inherits
+	// the orphaned child's run and never emits stop — Warp stays "In progress".
+	await fire("session_shutdown", { reason: "new" }, main)
+	await fire("session_start", { reason: "new" }, fresh)
+	await startRun(fresh, "q2")
+	await fire("agent_end", {}, fresh)
+	await drainIdle()
+	// Two stops, no leak: the old session's held stop flushes on /new teardown,
+	// then the fresh session re-announces and settles with its own. Before the fix
+	// the orphaned child kept activeRuns > 0, so the fresh run never emitted stop.
+	expect(count("stop")).toBe(2)
+	const submits = osc777.filter((e) => e.event === "prompt_submit")
+	expect(submits.some((s) => s.query === "q2")).toBe(true)
+	await teardown(fresh)
+})

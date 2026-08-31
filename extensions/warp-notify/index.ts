@@ -172,27 +172,38 @@ function releaseRun(ctx: ExtensionContext): void {
 	if (activeRuns > 0) activeRuns--
 }
 
-/** A session went away (subagent teardown, session switch, exit). Release only
- *  what IT owned — never reset shared state while other runs are still live. */
+/** A session went away (subagent teardown, session switch, exit).
+ *
+ *  Two cases, split on `subagentSessions`:
+ *
+ *  - A SUBAGENT child tears down while the parent run is still live. Release only
+ *    the child's own share and never reset the shared counter — an unconditional
+ *    cleanup here would stop the parent's spinner mid-run with nothing left to
+ *    restart it. The counter drops to zero on the parent's own `agent_end`.
+ *
+ *  - A TOP-LEVEL session tears down (session replacement via /new, /resume,
+ *    /fork, or quit). It owns the whole run tree, so any runs still counted belong
+ *    to children that old tree spawned. Once the owner session is gone nothing
+ *    will ever fire `agent_end` for those children — they are orphans. Reset
+ *    everything: otherwise `activeRuns` stays > 0 and Warp's tab stays pinned
+ *    "In progress" across sessions. */
 function cleanupSession(ctx: ExtensionContext): void {
 	const sessionId = ctx.sessionManager.getSessionId()
+	if (!subagentSessions.has(sessionId)) {
+		// Top-level session going away: its subtree is discarded wholesale. Flush
+		// any held stop first so Warp's badge doesn't stay pinned "In progress"
+		// when the session is replaced with a subtree that never runs again.
+		flushDeferredStop()
+		cleanupAll()
+		return
+	}
 	releaseRun(ctx)
 	for (const [callId, call] of pendingBlocking) {
 		if (call.sessionId !== sessionId) continue
 		pendingBlocking.delete(callId)
 		if (blockedCalls > 0) blockedCalls--
 	}
-	if (activeRuns > 0) {
-		if (runCtx?.sessionManager.getSessionId() === sessionId) {
-			// The torn-down session owned the announcements: hand back the outer
-			// role (the next `agent_start` takes over) and keep children spinning.
-			runCtx = undefined
-			outerSettled = true
-			stopHeartbeat()
-			cancelIdleTimer()
-		}
-		return
-	}
+	if (activeRuns > 0) return // parent run still live — keep it spinning
 	flushDeferredStop()
 	cleanupAll()
 }
