@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.7.1] - 2026-09-01
+
+### Fixed
+
+- **warp-notify**：修复 `/new`、`/resume`、`/fork` 或退出替换顶层会话时，仍在计数的孤儿子代理运行使共享计数器无法归零、新会话的 run 永不发 `stop`、Warp tab 卡在 "In progress" 的问题——顶层会话 teardown 视为丢弃整棵运行树，先 flush 持有的 stop 再重置全部共享状态；子代理自身的 teardown 仍只释放自己的份额，不打扰仍在进行的父运行
+
 ## [0.7.0] - 2026-09-01
 
 ### Added
