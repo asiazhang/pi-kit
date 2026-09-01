@@ -1,5 +1,5 @@
 {
-	"name": "pi-codebuddy-kit",
+	"name": "pi-kit",
 	"version": "0.7.1",
 	"description": "pi coding agent provider extension for the Tencent CodeBuddy OpenAI-compatible gateway (copilot.tencent.com)",
 	"keywords": [

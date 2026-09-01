@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.8.0] - 2026-09-01
+
+### Changed
+
+- **package**：重命名为 `pi-kit`（npm 包名 + GitHub 仓库地址 `git:github.com/asiazhang/pi-kit`），旧名 `pi-codebuddy-kit` 停用；README 安装/更新/卸载命令同步更新
+
 ## [0.7.1] - 2026-09-01
 
 ### Fixed

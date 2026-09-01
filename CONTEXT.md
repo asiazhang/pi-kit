@@ -1,6 +1,6 @@
-# pi-codebuddy-kit
+# pi-kit
 
-pi 编码代理的腾讯 CodeBuddy 接入包（provider 注册 + 状态栏 + 系统提示词注入）。本文件是项目术语表。
+pi 编码代理的扩展工具包（provider 注册 + 状态栏 + 系统提示词注入 + Warp 通知）。本文件是项目术语表。
 
 ## Language
 
