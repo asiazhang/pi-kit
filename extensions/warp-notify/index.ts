@@ -2,8 +2,9 @@
  * Warp notifications — registration + run/block state machine.
  *
  * Warp renders what we write: the OSC 777 cli-agent sequence becomes a
- * system toast + tab badge; the per-tab braille spinner is driven by
- * title-spinner.ts through OSC 0 title churn. Outside Warp this registers
+ * system toast + tab badge; the per-tab spinner (one of several variants,
+ * picked at module load) is driven by title-spinner.ts through OSC 0 title
+ * churn. Outside Warp this registers
  * zero handlers and writes zero bytes — detection gates the whole feature
  * on env vars only Warp sets.
  *
