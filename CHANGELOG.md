@@ -5,7 +5,11 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [0.8.0] - 2026-09-01
+## [0.8.0] - 2026-09-03
+
+### Added
+
+- **warp-notify**：标签页 spinner 动画支持多版本——dots10（细密盲文旋转）、breathe（亮度呼吸条）、bounce（单点弹跳）、corner（角灯转动）、box（方块充填）、pie（饼图旋转）六组候选，每组自带帧数与节奏；每次会话启动时（模块加载，进程=会话）随机抽取一组，整段会话保持同一动画
 
 ### Changed
 
