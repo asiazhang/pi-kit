@@ -78,8 +78,18 @@ function formatCountdown(resetAt, now) {
 	return hours >= 1 ? `${hours}h${minutes}m` : `${minutes}m`
 }
 
+/** Mirror of planSegment() in extensions/tc-footer.ts — keep in sync. */
+function planSegment(ws, now, paint) {
+	const stale = now - ws.capturedAt > PLAN_DIM_MS
+	const parts = [
+		quotaBar("⏳5h", ws.fiveHour, "mdLink", stale, now, paint),
+		quotaBar("⏳7d", ws.weekly, "thinkingHigh", stale, now, paint),
+	].filter(Boolean)
+	return parts.join(" ")
+}
+
 /** Mirror of quotaBar() in extensions/tc-footer.ts — keep in sync. */
-function quotaBar(label, w, baseline, stale, now) {
+function quotaBar(label, w, baseline, stale, now, paint) {
 	if (!w) return ""
 	const pct = Math.max(0, Math.min(100, Math.round(w.usedPercent)))
 	// 20 cells (5% each), ceil: any nonzero usage must light ≥1 cell (a few
@@ -88,20 +98,22 @@ function quotaBar(label, w, baseline, stale, now) {
 	const filled = Math.ceil((pct / 100) * 20)
 	const bar = "█".repeat(filled) + "░".repeat(20 - filled)
 	const countdown = w.resetAt !== undefined ? ` ↻${formatCountdown(w.resetAt, now)}` : ""
-	if (stale) return theme.fg("dim", `${label} ${pct}% ${bar}${countdown}`)
+	if (stale) return paint("dim", `${label} ${pct}% ${bar}${countdown}`)
 	const color = pct >= 90 ? "error" : pct >= 70 ? "warning" : baseline
-	return theme.fg(color, `${label} ${pct}% ${bar}`) + (countdown ? theme.fg("dim", countdown) : "")
+	return paint(color, `${label} ${pct}% ${bar}`) + (countdown ? paint("dim", countdown) : "")
 }
 
-/** Mirror of planSegment() in extensions/tc-footer.ts — keep in sync. */
-function planSegment(ws, now) {
-	const stale = now - ws.capturedAt > PLAN_DIM_MS
-	const parts = [
-		quotaBar("⏳5h", ws.fiveHour, "mdLink", stale, now),
-		quotaBar("⏳7d", ws.weekly, "thinkingHigh", stale, now),
-	].filter(Boolean)
-	return parts.join(" ")
+/** Mirror of PLAN_ANSI in extensions/tc-footer.ts — keep in sync. */
+const PLAN_ANSI = {
+	mdLink: "\x1b[38;5;110m",
+	thinkingHigh: "\x1b[38;5;139m",
+	warning: "\x1b[38;5;214m",
+	error: "\x1b[38;5;203m",
+	dim: "\x1b[38;5;245m",
 }
+
+/** Mirror of planAnsi in extensions/tc-footer.ts — keep in sync. */
+const planAnsi = (color, text) => `${PLAN_ANSI[color]}${text}\x1b[0m`
 
 /** Mirror of render() in extensions/tc-footer.ts — keep in sync. */
 function renderLine(
@@ -130,7 +142,9 @@ function renderLine(
 	const think = thinking ? ` ${theme.fg("accent", `⚡${thinking}`)}` : ""
 	const modelColor = MODEL_COLORS[provider]
 	const modelPart = modelColor ? theme.fg(modelColor, model) : model
-	const plan = planWindow ? planSegment(planWindow, Date.now()) : ""
+	const plan = planWindow
+		? planSegment(planWindow, Date.now(), (color, text) => theme.fg(color, text))
+		: ""
 	const branchPart = branch ? theme.fg("dim", ` (${branch})`) : ""
 	// Narrow terminals drop the plan segment before the model id.
 	const build = (withPlan) => {
@@ -313,4 +327,21 @@ for (const [label, tokens, contextWindow, model, thinking, branch, planWindow, p
 console.log(`narrow (50 cols) — plan segment dropped before the model id:`)
 console.log(
 	renderLine(cwd, 116_000, 131_072, "glm-5.3", "high", "master", plan(42), 50, "zai-coding-cn"),
+)
+
+// pi-web status shelf: same segment, ANSI colors (the web theme is a no-op stub).
+console.log()
+console.log(`pi-web extension-status shelf (plan segment only, ANSI):`)
+for (const [label, ws] of [
+	["5h 42% + weekly 30%", plan(42, 0, 30)],
+	["5h 8% + weekly 85%", plan(8, 0, 85)],
+	["5h 95% (red)", plan(95, 0, 92)],
+	["stale >10min (dim)", plan(42, 15)],
+]) {
+	console.log(`${label}:`)
+	console.log(planSegment(ws, Date.now(), planAnsi))
+}
+console.log()
+console.log(
+	`pi-web clear (non-plan provider / no snapshot): setStatus(${JSON.stringify("coding-plan")}, undefined)`,
 )

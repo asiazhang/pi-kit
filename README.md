@@ -4,7 +4,7 @@
 
 另附带几个 provider 无关的扩展（默认启用，随包一起加载）：
 
-- **自定义状态栏**（`tc-footer`）：单行显示工作目录、上下文用量百分比与进度条、GLM coding plan 5 小时配额窗口（`⏳5h 42% ██░░░ ↻2h15m`，仅在使用 `zai-coding-cn` 且已存 key 时显示）、模型 id、思考等级（⚡）、git 分支。
+- **自定义状态栏**（`tc-footer`）：单行显示工作目录、上下文用量百分比与进度条、GLM coding plan 配额窗口（5 小时窗口 `⏳5h 42% ██░░░ ↻2h15m` + 7 天窗口 `⏳7d 92% ███████████████████░ ↻3d`，各 20 格、warning≥70% / error≥90%，仅在使用 `zai-coding-cn` 且已存 key 时显示）、模型 id、思考等级（⚡）、git 分支。pi-web 等无 footer 的界面会在扩展状态栏（`setStatus("coding-plan")`）中显示同一段配额窗口。
 - **系统提示词注入**（`system-prompt`）：每轮向系统提示词追加用户偏好（bash 搜索使用 `rg`，尊重 .gitignore）。
 - **Warp 终端通知**（`warp-notify`）：仅在 Warp 终端内激活，会话开始、提交提示词、等待提问回答、回答结束、空闲时弹系统通知，turn 进行中在 tab 标题显示进行中动画；子会话（SubAgent）不会误触发通知。非 Warp 环境无任何行为。
 
