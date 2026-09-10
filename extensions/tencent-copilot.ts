@@ -9,9 +9,10 @@
  * Then select a `tencent-copilot/<model>` entry via /model.
  *
  * Model snapshot and gateway quirks verified against the live gateway
- * on 2026-09-10 (earlier entries 2026-08-18). The DeepSeek Flash entry was
- * re-pointed from the legacy `deepseek-v4-flash-ioa` (gateway silently drops
- * images) to `deepseek-v4.1-flash-ioa`, which answers about them.
+ * on 2026-09-10 (earlier entries 2026-08-18). The DeepSeek Flash entry points
+ * at `deepseek-v4.1-flash-ioa`, the explicit V4.1 id; the legacy
+ * `deepseek-v4-flash-ioa` alias still answers — images included — but upstream
+ * lists it as a retired name whose requests are routed to V4.1-Flash.
  * Hot-reloadable via /reload after edits.
  */
 
