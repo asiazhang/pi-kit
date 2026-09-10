@@ -5,6 +5,17 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.9.0] - 2026-09-10
+
+### Added
+
+- **tc-footer**：pi-web 等没有 footer 的界面（RPC 模式下 `setFooter` 是 no-op）也能看到 coding plan 配额窗口——同一段 5h + 7d 窗口改由扩展状态栏（`setStatus("coding-plan")`）展示，切走 `zai-coding-cn` 即清除；终端 footer 的配色来自 theme，网页端改用 ANSI（RPC 的扩展 theme 是 no-op stub，`fg()` 原样返回文本），已发布文本做缓存避免重复推送。决策记录见 `docs/adr/0002-pi-web-plan-status.md`
+- **extension**：新增 `deepseek-v4.1-flash-ioa`（DeepSeek V4.1 Flash）模型条目：支持图片输入（实测能读出图片内容）、1M 上下文、384K 输出，思考档位沿用 `all`
+
+### Changed
+
+- **extension**：`deepseek-v4-flash-ioa` 替换为 `deepseek-v4.1-flash-ioa`——新 ID 是 V4.1 的显式入口（旧 ID 为上游已弃用名，请求会被路由到 V4.1-Flash）；旧 ID 在网关上仍可用，但已从目录移除，固定过它的配置需改用新 ID。DeepSeek 两个条目的输出上限 50000 → 384000，模型快照复核日期更新为 2026-09-10
+
 ## [0.8.0] - 2026-09-03
 
 ### Added
