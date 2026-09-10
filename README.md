@@ -79,7 +79,7 @@ pi --model tencent-copilot/glm-5.3-ioa
 | `minimax-m3-ioa` | MiniMax M3 |
 | `kimi-k3-ioa` | Kimi K3 |
 | `hy3-ioa` | Hy3 |
-| `deepseek-v4-flash-ioa` / `deepseek-v4-pro-ioa` | DeepSeek V4 Flash / Pro |
+| `deepseek-v4.1-flash-ioa` / `deepseek-v4-pro-ioa` | DeepSeek V4.1 Flash / Pro |
 
 ## 网关兼容性说明
 

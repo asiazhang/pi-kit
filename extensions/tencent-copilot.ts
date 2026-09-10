@@ -9,7 +9,10 @@
  * Then select a `tencent-copilot/<model>` entry via /model.
  *
  * Model snapshot and gateway quirks verified against the live gateway
- * on 2026-08-18. Hot-reloadable via /reload after edits.
+ * on 2026-09-10 (earlier entries 2026-08-18). The DeepSeek Flash entry was
+ * re-pointed from the legacy `deepseek-v4-flash-ioa` (gateway silently drops
+ * images) to `deepseek-v4.1-flash-ioa`, which answers about them.
+ * Hot-reloadable via /reload after edits.
  */
 
 import {
@@ -94,8 +97,8 @@ const SNAPSHOT: Array<[string, string, number, number, boolean, "all" | null]> =
 	["minimax-m3-ioa", "MiniMax M3", 512000, 48000, true, "all"],
 	["kimi-k3-ioa", "Kimi K3", 1000000, 32000, true, "all"],
 	["hy3-ioa", "Hy3", 192000, 64000, true, "all"],
-	["deepseek-v4-flash-ioa", "DeepSeek V4 Flash", 1000000, 50000, true, "all"],
-	["deepseek-v4-pro-ioa", "DeepSeek V4 Pro", 1000000, 50000, true, "all"],
+	["deepseek-v4.1-flash-ioa", "DeepSeek V4.1 Flash", 1000000, 384000, true, "all"],
+	["deepseek-v4-pro-ioa", "DeepSeek V4 Pro", 1000000, 384000, true, "all"],
 ]
 
 const models: Model<"openai-completions">[] = SNAPSHOT.map(
