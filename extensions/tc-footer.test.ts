@@ -172,17 +172,17 @@ test("capped windows label the bar Smart Zone", async () => {
 	const handlers = register()
 	const calls: StatusCall[] = []
 	const footers: FooterFactory[] = []
-	// 300k on a 1M-window model: the percent is 300k/450k = 67% of the Smart
+	// 600k on a 1M-window model: the percent is 600k/650k = 92% of the Smart
 	// Zone — the bar must label it, not leave the percent unexplained.
 	const big = makeCtx(PLAN, "tui", calls, {
 		footers,
-		usage: { tokens: 300_000, contextWindow: 1_048_576 },
+		usage: { tokens: 600_000, contextWindow: 1_048_576 },
 	})
 
 	await fire(handlers, "session_start", big)
 	await settle()
 	const capped = renderFooter(footers, 120)
-	expect(capped).toContain("67%")
+	expect(capped).toContain("92%")
 	expect(capped).toContain("Smart Zone")
 
 	// Uncapped window: the denominator is the nominal one — no label.

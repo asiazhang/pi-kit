@@ -22,7 +22,8 @@
  * - Context bar uses ctx.getContextUsage(). Percent is computed against the
  *   EFFECTIVE window min(contextWindow, EFFECTIVE_CONTEXT_TOKENS): research
  *   (Chroma "context rot", LangWatch compaction study) shows quality degrades
- *   long before large windows fill, so a 1M-token model is treated as 450k.
+ *   long before large windows fill, so a 1M-token model is treated as 650k
+ *   (evidence: docs/research/effective-context-window.md).
  *   Capped windows label the bar with a dim ` Smart Zone` (the layout example
  *   shows one): percent and bar describe the Smart Zone — the quality-holding
  *   effective window — not the spec-sheet window; uncapped windows skip the
@@ -31,7 +32,9 @@
  *   Color thresholds track pi's auto-compaction trigger
  *   (tokens > window - RESERVE_TOKENS): red at the trigger point of the
  *   effective window, yellow halfway below it. Windows capped by the
- *   450k ceiling relax red to 65% of the effective window.
+ *   650k ceiling relax red to 85% of the effective window: agent loops
+ *   tolerate high fill (Claude Code compacts a 1M session at 96.7%, pi at
+ *   98.4%), so the red line is a late warning, not a quality cliff.
  * - Coding plan windows (⏳5h 42% █████████░░░░░░░░ ↻2h15m  ⏳7d 92% ███████████████████░ ↻3d): GLM
  *   coding plan (provider `zai-coding-cn`) quota windows as 20-cell bars (5% per cell),
  *   polled every 5 minutes from the bigmodel.cn quota API with the stored credential
@@ -75,13 +78,15 @@ function formatCwd(cwd: string): string {
 }
 
 /**
- * Effective-context ceiling (tokens). Research on context rot (Chroma, 18
- * frontier models) and real-world Claude Code traces (LangWatch) shows model
- * quality degrades measurably long before large windows fill; recommended
- * compaction ranges land in 200k–450k. Windows larger than this are capped
- * so the bar reflects usable context, not the marketing number.
+ * Effective-context ceiling (tokens). Context-rot research (Chroma, 18
+ * frontier models) shows quality degrades long before large windows fill,
+ * while compaction studies land the sweet spot well under 1M: LangWatch's
+ * real-trace cost model optimizes around 220k–450k and calls >600k an
+ * "unjustified premium". 650k caps the bar at roughly that boundary —
+ * usable context, not the marketing number. Full evidence and the red-line
+ * reasoning: docs/research/effective-context-window.md.
  */
-const EFFECTIVE_CONTEXT_TOKENS = 450_000
+const EFFECTIVE_CONTEXT_TOKENS = 650_000
 
 /** pi's default compaction reserve (settings.json: compaction.reserveTokens). */
 const RESERVE_TOKENS = 16_384
@@ -90,12 +95,14 @@ const RESERVE_TOKENS = 16_384
  * Color thresholds relative to the effective window. Small windows track
  * pi's auto-compaction trigger (tokens > window - RESERVE_TOKENS): red
  * right at it, yellow halfway below. When the window is capped by
- * EFFECTIVE_CONTEXT_TOKENS (e.g. a 1M model treated as 450k), the cap is
- * already conservative, so red relaxes to 65% of the effective window.
+ * EFFECTIVE_CONTEXT_TOKENS (e.g. a 1M model treated as 650k), there is no
+ * quality cliff at the cap — agent loops tolerate high fill (Claude Code
+ * compacts a 1M session at 96.7%, pi at 98.4%) — so red is a late warning
+ * at 85% of the effective window, yellow at half that.
  */
 function thresholds(effectiveWindow: number): { red: number; yellow: number } {
 	const capped = effectiveWindow >= EFFECTIVE_CONTEXT_TOKENS
-	const red = capped ? 65 : ((effectiveWindow - RESERVE_TOKENS) / effectiveWindow) * 100
+	const red = capped ? 85 : ((effectiveWindow - RESERVE_TOKENS) / effectiveWindow) * 100
 	return { red, yellow: red / 2 }
 }
 

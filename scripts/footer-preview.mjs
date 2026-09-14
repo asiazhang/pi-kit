@@ -20,7 +20,7 @@ const theme = themeMod.getThemeByName(process.env.PI_THEME || "dark")
 if (!theme) throw new Error(`theme "${process.env.PI_THEME || "dark"}" not found`)
 
 /** Mirror of EFFECTIVE_CONTEXT_TOKENS in extensions/tc-footer.ts — keep in sync. */
-const EFFECTIVE_CONTEXT_TOKENS = 450_000
+const EFFECTIVE_CONTEXT_TOKENS = 650_000
 
 /** Mirror of RESERVE_TOKENS in extensions/tc-footer.ts — keep in sync. */
 const RESERVE_TOKENS = 16_384
@@ -40,7 +40,7 @@ function formatCwd(cwd) {
 /** Mirror of thresholds() in extensions/tc-footer.ts — keep in sync. */
 function thresholds(effectiveWindow) {
 	const capped = effectiveWindow >= EFFECTIVE_CONTEXT_TOKENS
-	const red = capped ? 65 : ((effectiveWindow - RESERVE_TOKENS) / effectiveWindow) * 100
+	const red = capped ? 85 : ((effectiveWindow - RESERVE_TOKENS) / effectiveWindow) * 100
 	return { red, yellow: red / 2 }
 }
 
@@ -237,7 +237,7 @@ const cases = [
 		"tencent-copilot",
 	],
 	[
-		"1M window @ 200k (yellow — bar labeled Smart Zone)",
+		"1M window @ 200k (green — well inside the Smart Zone)",
 		200_000,
 		1_048_576,
 		"gpt-5",
@@ -247,7 +247,7 @@ const cases = [
 		"anthropic",
 	],
 	[
-		"1M window @ 300k (red — 67% of the Smart Zone, past the relaxed 65% red line)",
+		"1M window @ 300k (yellow — 46% of the Smart Zone, past the 42.5% yellow line)",
 		300_000,
 		1_048_576,
 		"gpt-5",
@@ -257,8 +257,8 @@ const cases = [
 		"openai",
 	],
 	[
-		"1M window @ 440k (red — Smart Zone nearly full)",
-		440_000,
+		"1M window @ 600k (red — 92% of the Smart Zone, past the 85% red line)",
+		600_000,
 		1_048_576,
 		"gpt-5",
 		"high",
