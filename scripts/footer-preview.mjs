@@ -136,7 +136,9 @@ function renderLine(
 		if (pct !== null) {
 			const shown = Math.min(100, Math.round(pct))
 			const color = pct >= th.red ? "error" : pct >= th.yellow ? "warning" : "success"
-			context = ` ${theme.fg(color, `${shown}%`)} ${contextBar(pct, th)}`
+			// Capped windows: label the Smart Zone (mirror of tc-footer.ts).
+			const capNote = contextWindow > EFFECTIVE_CONTEXT_TOKENS ? theme.fg("dim", " Smart Zone") : ""
+			context = ` ${theme.fg(color, `${shown}%`)} ${contextBar(pct, th)}${capNote}`
 		}
 	}
 	const think = thinking ? ` ${theme.fg("accent", `⚡${thinking}`)}` : ""
@@ -235,7 +237,7 @@ const cases = [
 		"tencent-copilot",
 	],
 	[
-		"1M window @ 200k (yellow — red is 65% of effective window)",
+		"1M window @ 200k (yellow — bar labeled Smart Zone)",
 		200_000,
 		1_048_576,
 		"gpt-5",
@@ -245,7 +247,7 @@ const cases = [
 		"anthropic",
 	],
 	[
-		"1M window @ 300k (yellow — red is 65% of effective window)",
+		"1M window @ 300k (red — 67% of the Smart Zone, past the relaxed 65% red line)",
 		300_000,
 		1_048_576,
 		"gpt-5",
@@ -255,7 +257,7 @@ const cases = [
 		"openai",
 	],
 	[
-		"1M window @ 440k (red — effective window nearly full)",
+		"1M window @ 440k (red — Smart Zone nearly full)",
 		440_000,
 		1_048_576,
 		"gpt-5",

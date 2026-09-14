@@ -8,6 +8,10 @@ pi 编码代理的扩展工具包（provider 注册 + 状态栏 + 系统提示�
 当前会话上下文相对有效上下文窗口的占用比例，由 footer 的百分比与进度条展示。
 _Avoid_: token 百分比、memory 占用
 
+**Smart Zone**:
+上下文进度条上的有效区间标签。有效上下文窗口设有保守上限，标称窗口超过上限的模型按上限计；此时 footer 以 `Smart Zone` 标注进度条，提示百分比与进度条描述的是这个区间，而非标称窗口。未截断的窗口不标注。
+_Avoid_: of 450k、有效窗口后缀
+
 **Coding plan**:
 按配额窗口计费的 LLM 订阅计划（区别于按 token 计量），当前指 GLM coding plan（pi provider `zai-coding-cn`）。
 _Avoid_: 套餐、credits

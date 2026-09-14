@@ -52,6 +52,13 @@ interface StatusCall {
 	text: string | undefined
 }
 
+/** A captured footer factory, as handed to ctx.ui.setFooter(). */
+type FooterFactory = (
+	tui: unknown,
+	theme: unknown,
+	footerData: unknown,
+) => { render: (width: number) => string[] }
+
 function register(): Map<string, Handler> {
 	const handlers = new Map<string, Handler>()
 	registerFooter({
@@ -68,22 +75,40 @@ function fire(handlers: Map<string, Handler>, name: string, ctx: ExtensionContex
 	return handler({}, ctx)
 }
 
-function makeCtx(provider: string, mode: "tui" | "rpc", calls: StatusCall[]): ExtensionContext {
+function makeCtx(
+	provider: string,
+	mode: "tui" | "rpc",
+	calls: StatusCall[],
+	opts: {
+		/** Context-usage reading; defaults to null (bar hidden). */
+		usage?: { tokens: number | null; contextWindow: number } | null
+		/** When given, captured footer factories are pushed here. */
+		footers?: FooterFactory[]
+	} = {},
+): ExtensionContext {
 	return {
 		mode,
 		hasUI: true,
 		model: { provider, id: "glm-5.3", reasoning: true },
 		thinkingLevel: "high",
-		getContextUsage: () => null,
+		getContextUsage: () => (opts.usage === undefined ? null : opts.usage),
 		sessionManager: { getCwd: () => "/tmp/tc-footer-test" },
 		modelRegistry: { getApiKeyForProvider: async () => "test-key" },
 		ui: {
-			setFooter: () => {},
+			setFooter: (factory: FooterFactory) => opts.footers?.push(factory),
 			setStatus: (key: string, text: string | undefined) => {
 				calls.push({ key, text })
 			},
 		},
 	} as unknown as ExtensionContext
+}
+
+/** Render one footer line through the last captured footer factory. */
+function renderFooter(footers: FooterFactory[], width: number): string {
+	const themeStub = { fg: (_color: string, text: string) => text }
+	const dataStub = { onBranchChange: () => () => {}, getGitBranch: () => "main" }
+	const view = footers[footers.length - 1](null, themeStub, dataStub)
+	return view.render(width)[0]
 }
 
 /** Let the fire-and-forget poll (`void pollPlan`) reach its setStatus call. */
@@ -141,6 +166,35 @@ test("an unchanged segment is not re-published", async () => {
 	expect(calls.length).toBe(1)
 
 	await fire(handlers, "session_shutdown", ctx)
+})
+
+test("capped windows label the bar Smart Zone", async () => {
+	const handlers = register()
+	const calls: StatusCall[] = []
+	const footers: FooterFactory[] = []
+	// 300k on a 1M-window model: the percent is 300k/450k = 67% of the Smart
+	// Zone — the bar must label it, not leave the percent unexplained.
+	const big = makeCtx(PLAN, "tui", calls, {
+		footers,
+		usage: { tokens: 300_000, contextWindow: 1_048_576 },
+	})
+
+	await fire(handlers, "session_start", big)
+	await settle()
+	const capped = renderFooter(footers, 120)
+	expect(capped).toContain("67%")
+	expect(capped).toContain("Smart Zone")
+
+	// Uncapped window: the denominator is the nominal one — no label.
+	const small = makeCtx(PLAN, "tui", calls, {
+		footers,
+		usage: { tokens: 30_000, contextWindow: 131_072 },
+	})
+	await fire(handlers, "session_start", small)
+	expect(renderFooter(footers, 120)).not.toContain("Smart Zone")
+
+	await fire(handlers, "session_shutdown", small)
+	await fire(handlers, "session_shutdown", big)
 })
 
 test("tui mode never publishes a status", async () => {

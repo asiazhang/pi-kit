@@ -9,8 +9,8 @@
  *
  * Layout (single line, ANSI-safe truncation on narrow terminals):
  *
- *   ~/proj  42% ████████░░░░░░░░░░░░░░  ⏳5h 12% █████████░░░░░░░░ ↻2h15m  ⏳7d 92% ███████████████████░ ↻3d  model-id ⚡high (git-branch)
- *   └─ cwd ─┘  └──── context bar ────┘  └────── plan windows (5h + 7d) ──────┘  └─ right-aligned ─┘
+ *   ~/proj  67% █████████████░░░░░░░░ Smart Zone  ⏳5h 12% █████████░░░░░░░░ ↻2h15m  ⏳7d 92% ███████████████████░ ↻3d  model-id ⚡high (git-branch)
+ *   └─ cwd ─┘  └────────── context bar ──────────┘  └────── plan windows (5h + 7d) ──────┘  └─ right-aligned ─┘
  *
  * - Model-id brand colors by provider: tencent-copilot (CodeBuddy gateway)
  *   renders accent teal; the GLM coding plan (`zai-coding-cn`) renders
@@ -23,6 +23,11 @@
  *   EFFECTIVE window min(contextWindow, EFFECTIVE_CONTEXT_TOKENS): research
  *   (Chroma "context rot", LangWatch compaction study) shows quality degrades
  *   long before large windows fill, so a 1M-token model is treated as 450k.
+ *   Capped windows label the bar with a dim ` Smart Zone` (the layout example
+ *   shows one): percent and bar describe the Smart Zone — the quality-holding
+ *   effective window — not the spec-sheet window; uncapped windows skip the
+ *   label, their denominator is the nominal window anyway. See the Smart Zone
+ *   entry in CONTEXT.md.
  *   Color thresholds track pi's auto-compaction trigger
  *   (tokens > window - RESERVE_TOKENS): red at the trigger point of the
  *   effective window, yellow halfway below it. Windows capped by the
@@ -374,7 +379,13 @@ export default function (pi: ExtensionAPI) {
 						if (pct !== null) {
 							const shown = Math.min(100, Math.round(pct))
 							const color = pct >= th.red ? "error" : pct >= th.yellow ? "warning" : "success"
-							context = ` ${theme.fg(color, `${shown}%`)} ${contextBar(pct, th, theme)}`
+							// When the nominal window is capped, percent and bar describe the
+							// effective window, not the spec-sheet one — label the Smart Zone,
+							// or "67%" on a 1M model reads as a miscalculation. Uncapped
+							// windows are self-explanatory and stay clean.
+							const capNote =
+								usage.contextWindow > EFFECTIVE_CONTEXT_TOKENS ? theme.fg("dim", " Smart Zone") : ""
+							context = ` ${theme.fg(color, `${shown}%`)} ${contextBar(pct, th, theme)}${capNote}`
 						}
 					}
 
