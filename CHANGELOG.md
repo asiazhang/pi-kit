@@ -5,6 +5,17 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.10.0] - 2026-09-14
+
+### Added
+
+- **tc-footer**：上下文进度条在标称窗口超过 650k 上限时追加 dim 色 `Smart Zone` 标签——百分比与进度条以截断后的有效上下文窗口为分母，标签明示这一点，避免“1M 模型的 67%”被误读为标称窗口占比；未截断的窗口不加标注。术语定义见 `CONTEXT.md`
+- **docs**：新增有效上下文窗口调研报告 `docs/research/effective-context-window.md`（一手来源：Chroma context rot、RULER、NoLiMa、LangWatch 真实 trace、pi 与 Claude Code 源码对照）
+
+### Changed
+
+- **tc-footer**：Smart Zone 上限 450k → 650k，截断窗口红线 65% → 85%（≈552.5k，仍早于 pi 真实 compaction 点 98.4%）——300–450k 区间（生产实践验证可用：Claude Code 1M 会话 96.7% 才压缩）不再误标红；阈值依据见调研报告
+
 ## [0.9.0] - 2026-09-10
 
 ### Added
