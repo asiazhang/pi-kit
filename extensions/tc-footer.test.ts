@@ -16,7 +16,7 @@
  */
 import { expect, test } from "bun:test"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
-import registerFooter from "./tc-footer"
+import registerFooter, { speedColor } from "./tc-footer"
 
 /** Quota response shape verified live 2026-08-28 (unit 3 = 5h window, unit 6 = weekly). */
 const quotaPayload = {
@@ -106,8 +106,10 @@ function makeCtx(
 /** Render one footer line through the last captured footer factory. */
 function renderFooter(footers: FooterFactory[], width: number): string {
 	const themeStub = { fg: (_color: string, text: string) => text }
+	// Streaming refreshes call requestRender on the captured tui — must not throw.
+	const tuiStub = { requestRender() {} }
 	const dataStub = { onBranchChange: () => () => {}, getGitBranch: () => "main" }
-	const view = footers[footers.length - 1](null, themeStub, dataStub)
+	const view = footers[footers.length - 1](tuiStub, themeStub, dataStub)
 	return view.render(width)[0]
 }
 
@@ -207,6 +209,159 @@ test("tui mode never publishes a status", async () => {
 	await fire(handlers, "model_select", makeCtx(PLAN, "tui", calls))
 
 	expect(calls).toEqual([])
+
+	await fire(handlers, "session_shutdown", ctx)
+})
+
+// ---------------------------------------------------------------------------
+// Token-speed segment (token 速度 / 速度等级 in CONTEXT.md): tier colors,
+// run lifecycle (agent_start → agent_end), the paused tool clock, and the
+// narrow-terminal drop order (plan → token speed → branch).
+// ---------------------------------------------------------------------------
+
+/** Fire a handler with a real event payload (fire() above only passes {}). */
+function emit(
+	handlers: Map<string, Handler>,
+	name: string,
+	event: unknown,
+	ctx: ExtensionContext,
+): Promise<void> {
+	const handler = handlers.get(name)
+	if (handler === undefined) throw new Error(`no handler registered for ${name}`)
+	return handler(event, ctx)
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+const textDelta = (delta: string): unknown => ({
+	type: "message_update",
+	message: { role: "assistant" },
+	assistantMessageEvent: { type: "text_delta", delta },
+})
+
+/** Extract the tok/s value from a rendered line (throws when the segment is absent). */
+const parseTps = (line: string): number => {
+	const match = /⚡([\d.]+) tok\/s/.exec(line)
+	if (match === null) throw new Error(`no speed segment in footer line: ${line}`)
+	return Number(match[1])
+}
+
+test("speed tiers map to the four footer colors", () => {
+	expect(speedColor(0)).toBe("error")
+	expect(speedColor(49.9)).toBe("error")
+	expect(speedColor(50)).toBe("warning")
+	expect(speedColor(99.9)).toBe("warning")
+	expect(speedColor(100)).toBe("success")
+	expect(speedColor(199.9)).toBe("success")
+	expect(speedColor(200)).toBe("accent")
+	expect(speedColor(300)).toBe("accent")
+})
+
+test("token speed: hidden before the first run, live while streaming, exact average after", async () => {
+	const handlers = register()
+	const calls: StatusCall[] = []
+	const footers: FooterFactory[] = []
+	const ctx = makeCtx("tencent-copilot", "tui", calls, { footers })
+
+	await fire(handlers, "session_start", ctx)
+	await settle()
+	// Before the first run there is no data — no segment.
+	expect(renderFooter(footers, 120)).not.toContain("tok/s")
+
+	await emit(handlers, "agent_start", { type: "agent_start" }, ctx)
+	// Running, but no deltas yet — still nothing to show.
+	expect(renderFooter(footers, 120)).not.toContain("tok/s")
+
+	await emit(handlers, "message_update", textDelta("hello streaming world"), ctx)
+	// The first instant is too short to divide by; the previous reading is kept.
+	expect(renderFooter(footers, 120)).not.toContain("tok/s")
+	await sleep(150)
+	await emit(handlers, "message_update", textDelta("more tokens keep arriving here"), ctx)
+	const live = renderFooter(footers, 120)
+	expect(live).toMatch(/⚡\d+\.\d tok\/s/)
+	// ⚡ now means token speed; the thinking level wears ✦ instead.
+	expect(live).toContain("✦high")
+	expect(live).not.toContain("⚡high")
+
+	// Provider usage arrives with the completed message and replaces the estimate.
+	await emit(
+		handlers,
+		"message_end",
+		{ type: "message_end", message: { role: "assistant", usage: { output: 300 } } },
+		ctx,
+	)
+	await sleep(60)
+	await emit(handlers, "agent_end", { type: "agent_end", messages: [] }, ctx)
+	// 300 tokens over the run's active time — the estimate alone (~13 tokens)
+	// could never reach this rate, so the assertion proves the reconcile.
+	expect(parseTps(renderFooter(footers, 120))).toBeGreaterThan(400)
+	// Frozen after the run: the segment stays until the next agent_start.
+	expect(renderFooter(footers, 120)).toContain("tok/s")
+
+	await fire(handlers, "session_shutdown", ctx)
+})
+
+test("tool execution pauses the run clock", async () => {
+	const handlers = register()
+	const calls: StatusCall[] = []
+	const footers: FooterFactory[] = []
+	const ctx = makeCtx("tencent-copilot", "tui", calls, { footers })
+
+	await fire(handlers, "session_start", ctx)
+	await settle()
+	await emit(handlers, "agent_start", { type: "agent_start" }, ctx)
+	// ~1000 estimated tokens, generated in ~50ms of active time (the sleep
+	// keeps the active span well above Date.now()'s 1ms granularity).
+	await emit(handlers, "message_update", textDelta(Array(1000).fill("token").join(" ")), ctx)
+	await sleep(50)
+	await emit(handlers, "tool_execution_start", { type: "tool_execution_start" }, ctx)
+	await sleep(500)
+	await emit(handlers, "tool_execution_end", { type: "tool_execution_end" }, ctx)
+	await emit(handlers, "agent_end", { type: "agent_end", messages: [] }, ctx)
+	// Excluding the 500ms tool pause: ~1000 tokens / ~50ms ≈ 20000 tok/s.
+	// Counting the pause would yield ~1800 — below the assertion.
+	expect(parseTps(renderFooter(footers, 120))).toBeGreaterThan(4000)
+
+	await fire(handlers, "session_shutdown", ctx)
+})
+
+test("narrow terminals drop plan → token speed → branch, model id last", async () => {
+	const handlers = register()
+	const calls: StatusCall[] = []
+	const footers: FooterFactory[] = []
+	const ctx = makeCtx(PLAN, "tui", calls, { footers })
+
+	await fire(handlers, "session_start", ctx)
+	await settle() // the fetch stub fills the plan snapshot
+	await emit(handlers, "agent_start", { type: "agent_start" }, ctx)
+	await emit(handlers, "message_update", textDelta("streaming tokens for the width scan"), ctx)
+	await sleep(150)
+	await emit(handlers, "message_update", textDelta("and a second delta"), ctx)
+
+	/** Smallest width at which the needle still appears in the rendered line. */
+	const minWidthShowing = (needle: string): number => {
+		for (let w = 40; w <= 240; w++) {
+			if (renderFooter(footers, w).includes(needle)) return w
+		}
+		throw new Error(`never rendered ${JSON.stringify(needle)}`)
+	}
+	const withPlan = minWidthShowing("⏳5h")
+	const withSpeed = minWidthShowing("tok/s")
+	const withBranch = minWidthShowing("(main)")
+	// Each segment needs strictly more width than the next one in drop order,
+	// so narrowing sheds the plan first, then the token speed, then the branch.
+	expect(withPlan).toBeGreaterThan(withSpeed)
+	expect(withSpeed).toBeGreaterThan(withBranch)
+
+	// At the speed threshold the plan is already gone, but the model id stays.
+	const atSpeed = renderFooter(footers, withSpeed)
+	expect(atSpeed).toContain("glm-5.3")
+	expect(atSpeed).not.toContain("⏳5h")
+	// At the branch threshold the speed is gone too — branch outlives it.
+	const atBranch = renderFooter(footers, withBranch)
+	expect(atBranch).not.toContain("tok/s")
+	expect(atBranch).toContain("(main)")
+	expect(atBranch).toContain("glm-5.3")
 
 	await fire(handlers, "session_shutdown", ctx)
 })

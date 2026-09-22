@@ -9,8 +9,8 @@
  *
  * Layout (single line, ANSI-safe truncation on narrow terminals):
  *
- *   ~/proj  67% █████████████░░░░░░░░ Smart Zone  ⏳5h 12% █████████░░░░░░░░ ↻2h15m  ⏳7d 92% ███████████████████░ ↻3d  model-id ⚡high (git-branch)
- *   └─ cwd ─┘  └────────── context bar ──────────┘  └────── plan windows (5h + 7d) ──────┘  └─ right-aligned ─┘
+ *   ~/proj  67% █████████████░░░░░░░░ Smart Zone  ⏳5h 12% █████████░░░░░░░░ ↻2h15m  ⏳7d 92% ███████████████████░ ↻3d  ⚡42.3 tok/s model-id ✦high (git-branch)
+ *   └─ cwd ─┘  └────────── context bar ──────────┘  └────── plan windows (5h + 7d) ──────┘  └────── right-aligned ──────┘
  *
  * - Model-id brand colors by provider: tencent-copilot (CodeBuddy gateway)
  *   renders accent teal; the GLM coding plan (`zai-coding-cn`) renders
@@ -49,9 +49,18 @@
  *   `ctx.ui.setStatus`; the RPC extension theme is a no-op stub there (fg() returns
  *   the text unchanged), so that copy carries ANSI SGR colors instead of theme colors.
  * - Git branch re-renders reactively via footerData.onBranchChange().
- * - Thinking level (⚡high) shown when the model supports reasoning;
+ * - Token speed (⚡42.3 tok/s): live tok/s while an agent runs — one run =
+ *   agent_start → agent_end; tool execution pauses the clock, text and
+ *   thinking deltas are counted with a word-boundary estimate, and each
+ *   message_end swaps the estimate for provider usage so the whole-run
+ *   average frozen after agent_end is exact. Colored by the 速度等级 tiers
+ *   (<50 error, 50–100 warning, 100–200 success, ≥200 accent; the anchor is
+ *   a 300 tok/s ceiling). Hidden until the first run; refreshes at most
+ *   every 250ms while streaming (trailing flush).
+ * - Thinking level (✦high) shown when the model supports reasoning;
  *   re-renders reactively via the thinking_level_select event. The plan
- *   segment re-renders via model_select.
+ *   segment re-renders via model_select. ⚡ belongs to the token-speed
+ *   segment — the two icons never swap.
  * - Re-applied on session_start so the footer closure always captures a
  *   live ctx (session replacement invalidates the old one).
  */
@@ -135,6 +144,75 @@ const MODEL_COLORS: Partial<Record<string, ThemeColor>> = {
 	"tencent-copilot": "accent",
 	"zai-coding-cn": "thinkingXhigh",
 }
+
+// ============================================================================
+// Token speed (live tok/s during an agent run)
+// ============================================================================
+
+/**
+ * Speed-tier lower bounds (tok/s): below `warn` is unacceptable (error red),
+ * then warning yellow, success green, and accent cyan from `top` up — the
+ * anchor is a ~300 tok/s ceiling (fastest observed model), so the top tier
+ * starts at two-thirds of it. See the 速度等级 entry in CONTEXT.md.
+ */
+const SPEED_TIERS = { warn: 50, good: 100, top: 200 }
+
+/** Sliding-window length behind the live tok/s reading. */
+const SPEED_WINDOW_MS = 1_000
+
+/**
+ * Don't replace the live reading until the fresh window spans this long:
+ * dividing the first delta by ~0ms would spike to an absurd rate.
+ */
+const SPEED_MIN_SPAN_MS = 100
+
+/** Footer refresh cadence while streaming: ≤1 render per interval, plus a trailing flush. */
+const SPEED_THROTTLE_MS = 250
+
+/** Word/punctuation token estimate applied to one streaming delta (`estimate` counting). */
+const TOKEN_REGEX = /\w+|[^\s\w]/g
+
+/** Tier color for a tok/s value — see SPEED_TIERS. */
+export function speedColor(tps: number): "error" | "warning" | "success" | "accent" {
+	if (tps >= SPEED_TIERS.top) return "accent"
+	if (tps >= SPEED_TIERS.good) return "success"
+	if (tps >= SPEED_TIERS.warn) return "warning"
+	return "error"
+}
+
+/** Token-speed state for one agent run (fresh per run and per session). */
+interface SpeedState {
+	/** True from agent_start until agent_end. */
+	running: boolean
+	/** Run start instant (epoch ms). */
+	startAt: number
+	/** Tool-execution pause onset, while paused. */
+	pausedAt?: number
+	/** Accumulated paused milliseconds — excluded from the run average. */
+	pausedMs: number
+	/** Estimated total tokens, reconciled with usage.output at each message_end. */
+	tokens: number
+	/** Estimated tokens in the assistant message currently streaming. */
+	msgTokens: number
+	/** Timestamped token counts inside SPEED_WINDOW_MS. */
+	window: { t: number; n: number }[]
+	/** Latest sliding-window tok/s; kept until a fresh window spans enough time. */
+	live: number | null
+	/** Frozen whole-run average after agent_end, until the next run. */
+	final: number | null
+}
+
+const freshSpeed = (): SpeedState => ({
+	running: false,
+	startAt: 0,
+	pausedAt: undefined,
+	pausedMs: 0,
+	tokens: 0,
+	msgTokens: 0,
+	window: [],
+	live: null,
+	final: null,
+})
 
 // ============================================================================
 // Coding plan window (GLM coding plan, provider `zai-coding-cn`)
@@ -302,6 +380,12 @@ export default function (pi: ExtensionAPI) {
 	// not re-emitted (each setStatus pushes an update to the browser).
 	let planStatus: string | undefined
 
+	// Token-speed state for the current/last agent run, plus the streaming
+	// refresh throttle (session-scoped, like the plan state above).
+	let speed: SpeedState = freshSpeed()
+	let speedTimer: ReturnType<typeof setTimeout> | undefined
+	let speedLastRender = 0
+
 	const planActive = (ctx: ExtensionContext): boolean => ctx.model?.provider === PLAN_PROVIDER
 
 	/**
@@ -354,6 +438,72 @@ export default function (pi: ExtensionAPI) {
 		void pollPlan(ctx)
 	}
 
+	// Footer refresh while streaming: at most one render per SPEED_THROTTLE_MS
+	// plus a trailing flush, so the line doesn't redraw on every delta.
+	const flushSpeedRender = (): void => {
+		if (speedTimer !== undefined) {
+			clearTimeout(speedTimer)
+			speedTimer = undefined
+		}
+		speedLastRender = Date.now()
+		requestFooterRender?.()
+	}
+
+	const scheduleSpeedRender = (): void => {
+		const wait = SPEED_THROTTLE_MS - (Date.now() - speedLastRender)
+		if (wait <= 0) flushSpeedRender()
+		else if (speedTimer === undefined) speedTimer = setTimeout(flushSpeedRender, wait)
+	}
+
+	const stopSpeedTimer = (): void => {
+		if (speedTimer !== undefined) {
+			clearTimeout(speedTimer)
+			speedTimer = undefined
+		}
+	}
+
+	/**
+	 * One streaming delta (text or thinking): count estimated tokens, refresh
+	 * the sliding-window reading, schedule a throttled redraw. A delta means
+	 * generation is live, so it also closes any open tool pause.
+	 */
+	const recordSpeedDelta = (delta: string): void => {
+		if (!speed.running) return
+		if (speed.pausedAt !== undefined) {
+			speed.pausedMs += Date.now() - speed.pausedAt
+			speed.pausedAt = undefined
+		}
+		const matches = delta.match(TOKEN_REGEX)
+		if (!matches) return
+		const now = Date.now()
+		speed.tokens += matches.length
+		speed.msgTokens += matches.length
+		speed.window.push({ t: now, n: matches.length })
+		// Slide the window; keep the previous reading until the fresh span is
+		// long enough to divide by.
+		const cutoff = now - SPEED_WINDOW_MS
+		while (speed.window.length > 0 && speed.window[0].t <= cutoff) speed.window.shift()
+		const spanMs = speed.window.length > 0 ? now - speed.window[0].t : 0
+		if (spanMs >= SPEED_MIN_SPAN_MS) {
+			let sum = 0
+			for (const entry of speed.window) sum += entry.n
+			speed.live = sum / (spanMs / 1000)
+		}
+		scheduleSpeedRender()
+	}
+
+	/**
+	 * message_end: swap this message's estimate for the provider's cumulative
+	 * output count (usage arrives only with the completed message), so the
+	 * frozen run average is exact rather than estimated.
+	 */
+	const reconcileSpeed = (message: { role?: unknown; usage?: { output?: unknown } }): void => {
+		if (message.role !== "assistant" || !speed.running) return
+		const actual = message.usage?.output
+		if (typeof actual === "number" && actual > 0) speed.tokens += actual - speed.msgTokens
+		speed.msgTokens = 0
+	}
+
 	const stopPlanTimer = (): void => {
 		if (planTimer) {
 			clearInterval(planTimer)
@@ -398,8 +548,14 @@ export default function (pi: ExtensionAPI) {
 
 					const thinking =
 						ctx.thinkingLevel && ctx.model?.reasoning
-							? ` ${theme.fg("accent", `⚡${ctx.thinkingLevel}`)}`
+							? ` ${theme.fg("accent", `✦${ctx.thinkingLevel}`)}`
 							: ""
+
+					// Live tok/s while a run streams; the frozen whole-run average
+					// after agent_end; nothing before the first run.
+					const tps = speed.running ? speed.live : speed.final
+					const speedSeg =
+						tps !== null ? ` ${theme.fg(speedColor(tps), `⚡${tps.toFixed(1)} tok/s`)}` : ""
 
 					const branch = footerData.getGitBranch()
 					const provider = ctx.model?.provider ?? ""
@@ -411,21 +567,31 @@ export default function (pi: ExtensionAPI) {
 						ctx.model?.provider === PLAN_PROVIDER && planWindow
 							? planSegment(planWindow, Date.now(), paint)
 							: ""
-					// Narrow terminals drop the plan segment before the model id.
-					const build = (withPlan: boolean): string => {
+					// Narrow terminals drop segments in order: plan → token speed →
+					// branch; the model id and context bar always survive, and the
+					// whole line truncates only as a last resort. (Comparing the
+					// UNTRUNCATED candidate widths is what makes dropping possible —
+					// a pre-truncated string never exceeds the width.)
+					const build = (level: number): string => {
 						const right = [
-							withPlan ? plan : "",
+							level >= 1 ? "" : plan,
+							level >= 2 ? "" : speedSeg,
 							model + thinking,
-							branch ? theme.fg("dim", ` (${branch})`) : "",
+							level >= 3 ? "" : branch ? theme.fg("dim", ` (${branch})`) : "",
 						]
 							.filter(Boolean)
 							.join(" ")
 						const pad = " ".repeat(
 							Math.max(1, width - visibleWidth(left) - visibleWidth(context) - visibleWidth(right)),
 						)
-						return truncateToWidth(left + context + pad + right, width)
+						return left + context + pad + right
 					}
-					return [plan && visibleWidth(build(true)) > width ? build(false) : build(true)]
+					let chosen = ""
+					for (let level = 0; level <= 3 && chosen === ""; level++) {
+						const candidate = build(level)
+						if (visibleWidth(candidate) <= width) chosen = candidate
+					}
+					return [truncateToWidth(chosen || build(0), width)]
 				},
 			}
 		})
@@ -434,6 +600,52 @@ export default function (pi: ExtensionAPI) {
 	// Re-render the footer when the thinking level changes (Tab, /thinking, model switch).
 	pi.on("thinking_level_select", async () => {
 		requestFooterRender?.()
+	})
+
+	// Streaming lifecycle: one run spans agent_start → agent_end (across tool
+	// calls); tool execution pauses the clock so wait time never reads as slow
+	// generation. Deltas drive the live reading, message_end reconciles the
+	// total with provider usage, agent_end freezes the whole-run average and
+	// flushes a final render.
+	pi.on("agent_start", async () => {
+		speed = freshSpeed()
+		speed.running = true
+		speed.startAt = Date.now()
+	})
+
+	pi.on("message_update", async (event) => {
+		const streamEvent = event.assistantMessageEvent
+		if (streamEvent.type === "text_delta" || streamEvent.type === "thinking_delta") {
+			recordSpeedDelta(streamEvent.delta)
+		}
+	})
+
+	pi.on("message_end", async (event) => {
+		reconcileSpeed(event.message)
+	})
+
+	pi.on("tool_execution_start", async () => {
+		if (speed.running && speed.pausedAt === undefined) speed.pausedAt = Date.now()
+	})
+
+	pi.on("tool_execution_end", async () => {
+		if (speed.pausedAt !== undefined) {
+			speed.pausedMs += Date.now() - speed.pausedAt
+			speed.pausedAt = undefined
+		}
+	})
+
+	pi.on("agent_end", async () => {
+		if (!speed.running) return
+		if (speed.pausedAt !== undefined) {
+			speed.pausedMs += Date.now() - speed.pausedAt
+			speed.pausedAt = undefined
+		}
+		speed.running = false
+		const elapsedMs = Date.now() - speed.startAt - speed.pausedMs
+		// No tokens or no elapsed time — no segment (rather than a misleading 0).
+		speed.final = speed.tokens > 0 && elapsedMs > 0 ? speed.tokens / (elapsedMs / 1000) : null
+		flushSpeedRender()
 	})
 
 	// Re-render on model switch and prime the plan segment when switching to
@@ -452,6 +664,11 @@ export default function (pi: ExtensionAPI) {
 		planWindow = undefined
 		planKey = undefined
 		stopPlanTimer()
+		// Token speed does not survive session switches/resumes: the segment
+		// hides until the first agent run of the new session.
+		speed = freshSpeed()
+		stopSpeedTimer()
+		speedLastRender = 0
 		if (enabled && ctx.hasUI) {
 			apply(ctx)
 			planTimer = setInterval(() => void pollPlan(ctx), PLAN_POLL_MS)
@@ -464,5 +681,6 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async () => {
 		stopPlanTimer()
+		stopSpeedTimer()
 	})
 }

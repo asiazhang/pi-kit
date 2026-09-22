@@ -31,3 +31,15 @@ _Avoid_: 周窗口、每周窗口
 **窗口重置 (Window reset)**:
 配额窗口重置、配额恢复的时刻；footer 以 ↻ 倒计时展示。
 _Avoid_: 过期时间
+
+**token 速度 (Token speed)**:
+AI 流式输出时的实时生成吞吐，单位 tok/s；footer 以 `⚡<数值> tok/s` 展示，⚡ 图标专属此段。
+_Avoid_: TPS、生成速率
+
+**速度等级 (Speed tier)**:
+按 token 速度划分的四档，以 footer 颜色承载：<50 为不可接受（红），50–100 勉强可用（黄），100–200 快（绿），≥200 接近满速（青，满速锚点 300 tok/s）。
+_Avoid_: 速度段
+
+**思考等级 (Thinking level)**:
+模型推理深度档位，footer 以 `✦<等级>` 展示；⚡ 归 token 速度专用，两者不混用。
+_Avoid_: 思考模式

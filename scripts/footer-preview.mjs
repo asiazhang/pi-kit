@@ -5,9 +5,9 @@
  *   node scripts/footer-preview.mjs [columns]
  *
  * Renders the exact same logic as extensions/tc-footer.ts (cwd shortening,
- * effective-window percent, dynamic color thresholds, colors) for a few
- * representative states, using the real pi theme (dark by default,
- * PI_THEME to override).
+ * effective-window percent, dynamic color thresholds, colors, token-speed
+ * tiers) for a few representative states, using the real pi theme (dark by
+ * default, PI_THEME to override).
  */
 
 import { isAbsolute, relative, resolve, sep } from "node:path"
@@ -62,6 +62,17 @@ function contextBar(pct, th) {
 const MODEL_COLORS = {
 	"tencent-copilot": "accent",
 	"zai-coding-cn": "thinkingXhigh",
+}
+
+/** Mirror of SPEED_TIERS in extensions/tc-footer.ts — keep in sync. */
+const SPEED_TIERS = { warn: 50, good: 100, top: 200 }
+
+/** Mirror of speedColor() in extensions/tc-footer.ts — keep in sync. */
+function speedColor(tps) {
+	if (tps >= SPEED_TIERS.top) return "accent"
+	if (tps >= SPEED_TIERS.good) return "success"
+	if (tps >= SPEED_TIERS.warn) return "warning"
+	return "error"
 }
 
 /** Mirror of PLAN_DIM_MS in extensions/tc-footer.ts — keep in sync. */
@@ -126,6 +137,7 @@ function renderLine(
 	planWindow,
 	width,
 	provider = "",
+	speedTps = null,
 ) {
 	const left = theme.fg("dim", formatCwd(cwd))
 	let context = ""
@@ -141,25 +153,44 @@ function renderLine(
 			context = ` ${theme.fg(color, `${shown}%`)} ${contextBar(pct, th)}${capNote}`
 		}
 	}
-	const think = thinking ? ` ${theme.fg("accent", `⚡${thinking}`)}` : ""
+	const think = thinking ? ` ${theme.fg("accent", `✦${thinking}`)}` : ""
 	const modelColor = MODEL_COLORS[provider]
 	const modelPart = modelColor ? theme.fg(modelColor, model) : model
 	const plan = planWindow
 		? planSegment(planWindow, Date.now(), (color, text) => theme.fg(color, text))
 		: ""
+	// Mirror of the token-speed segment in tc-footer.ts: null until the first
+	// run finishes; the same tiers (速度等级 in CONTEXT.md) color it.
+	const speedSeg =
+		speedTps === null ? "" : ` ${theme.fg(speedColor(speedTps), `⚡${speedTps.toFixed(1)} tok/s`)}`
 	const branchPart = branch ? theme.fg("dim", ` (${branch})`) : ""
-	// Narrow terminals drop the plan segment before the model id.
-	const build = (withPlan) => {
-		const right = [withPlan ? plan : "", modelPart + think, branchPart].filter(Boolean).join(" ")
+	// Narrow terminals drop plan → token speed → branch; the model id and
+	// context bar always survive (mirrors tc-footer.ts).
+	const build = (level) => {
+		const right = [
+			level >= 1 ? "" : plan,
+			level >= 2 ? "" : speedSeg,
+			modelPart + think,
+			level >= 3 ? "" : branchPart,
+		]
+			.filter(Boolean)
+			.join(" ")
 		const pad = " ".repeat(
 			Math.max(1, width - visibleWidth(left) - visibleWidth(context) - visibleWidth(right)),
 		)
-		return truncateToWidth(left + context + pad + right, width)
+		return left + context + pad + right
 	}
-	return plan && visibleWidth(build(true)) > width ? build(false) : build(true)
+	let chosen = ""
+	for (let level = 0; level <= 3 && chosen === ""; level++) {
+		const candidate = build(level)
+		if (visibleWidth(candidate) <= width) chosen = candidate
+	}
+	return truncateToWidth(chosen || build(0), width)
 }
 
-const width = Number(process.argv[2]) || 80
+// Default matches a typical Mac terminal (120 cols); pass columns explicitly
+// to preview narrow layouts.
+const width = Number(process.argv[2]) || 120
 const cwd = process.cwd()
 
 // Plan-window mock: 5h + 7d windows (usedPercent, reset+ageMin for the 5h, weeklyPct/resetMs for the 7d).
@@ -174,10 +205,10 @@ const plan = (fiveHourPct, ageMin = 0, weeklyPct = null) => {
 	return ws
 }
 
-// [label, tokens, contextWindow, model, thinking, branch, planWindow, provider]
+// [label, tokens, contextWindow, model, thinking, branch, planWindow, provider, speedTps]
 const cases = [
 	[
-		"128k window @ 30k (green)",
+		"128k window @ 30k (green) + speed 42.7 red (dropped when narrow)",
 		30_000,
 		131_072,
 		"hunyuan-t1-latest",
@@ -185,9 +216,10 @@ const cases = [
 		"master",
 		null,
 		"tencent-copilot",
+		42.7,
 	],
 	[
-		"128k window @ 30k + plan 8% (blue, 2 lit cells)",
+		"128k window @ 30k + plan 8% (blue, 2 lit cells) + speed 152.4 green (dropped when narrow)",
 		30_000,
 		131_072,
 		"glm-5.3",
@@ -195,9 +227,10 @@ const cases = [
 		"master",
 		plan(8),
 		"zai-coding-cn",
+		152.4,
 	],
 	[
-		"128k window @ 30k + plan 42% (green + blue)",
+		"128k window @ 30k + plan 42% (green + blue) + speed 280 cyan, near the 300 ceiling (dropped when narrow)",
 		30_000,
 		131_072,
 		"glm-5.3",
@@ -205,6 +238,7 @@ const cases = [
 		"master",
 		plan(42),
 		"zai-coding-cn",
+		280,
 	],
 	[
 		"128k window @ 70k + plan 75% (yellow + yellow)",
@@ -319,16 +353,87 @@ const cases = [
 	],
 ]
 
-for (const [label, tokens, contextWindow, model, thinking, branch, planWindow, provider] of cases) {
+for (const [
+	label,
+	tokens,
+	contextWindow,
+	model,
+	thinking,
+	branch,
+	planWindow,
+	provider,
+	speedTps,
+] of cases) {
 	console.log(`${label}:`)
 	console.log(
-		renderLine(cwd, tokens, contextWindow, model, thinking, branch, planWindow, width, provider),
+		renderLine(
+			cwd,
+			tokens,
+			contextWindow,
+			model,
+			thinking,
+			branch,
+			planWindow,
+			width,
+			provider,
+			speedTps ?? null,
+		),
 	)
 	console.log()
 }
-console.log(`narrow (50 cols) — plan segment dropped before the model id:`)
+// The tier ladder runs at ≥110 cols so the speed segment survives the long
+// preview cwd; the requested width still governs everything else.
+const ladderWidth = Math.max(width, 110)
 console.log(
-	renderLine(cwd, 116_000, 131_072, "glm-5.3", "high", "master", plan(42), 50, "zai-coding-cn"),
+	`speed tiers at ${ladderWidth} cols (anchor: 300 tok/s ceiling) — red <50, yellow 50–100, green 100–200, cyan ≥200:`,
+)
+for (const tps of [42.7, 75, 152.4, 280]) {
+	console.log(
+		renderLine(
+			cwd,
+			30_000,
+			131_072,
+			"deepseek-v4.1-flash-ioa",
+			"high",
+			"master",
+			null,
+			ladderWidth,
+			"tencent-copilot",
+			tps,
+		),
+	)
+}
+console.log()
+console.log(`narrow (100 cols) — plan segment dropped before the token speed:`)
+console.log(
+	renderLine(
+		cwd,
+		116_000,
+		131_072,
+		"glm-5.3",
+		"high",
+		"master",
+		plan(42),
+		100,
+		"zai-coding-cn",
+		152.4,
+	),
+)
+console.log()
+console.log(`narrower (80 cols) — token speed dropped before the branch:`)
+console.log(
+	renderLine(
+		cwd,
+		116_000,
+		131_072,
+		"glm-5.3",
+		"high",
+		"master",
+		plan(42),
+		80,
+		"zai-coding-cn",
+		152.4,
+	),
 )
 
 // pi-web status shelf: same segment, ANSI colors (the web theme is a no-op stub).

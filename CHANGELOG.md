@@ -5,6 +5,17 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Added
+
+- **tc-footer**：实时 token 速度段 `⚡42.3 tok/s`——一个 agent run（`agent_start`→`agent_end`）内以 1s 滑动窗口测 tok/s，工具执行期间暂停计时；`text_delta`/`thinking_delta` 按词边界正则估算 token，`message_end` 用 provider `usage.output` 校准总数，因此结束后定格的整轮平均是精确值。按速度等级着色（`<50` error / `50–100` warning / `100–200` success / `≥200` accent，满速锚点 300 tok/s），流式期间 250ms 节流刷新 + 尾部补刷；参考 [pi-token-speed](https://github.com/gsanhueza/pi-token-speed) 实现。术语定义见 `CONTEXT.md`
+
+### Changed
+
+- **tc-footer**：思考等级图标 ⚡ → ✦（⚡ 归 token 速度段专用，见 `CONTEXT.md` 词条）；窄终端截断顺序明确为 plan → token 速度 → 分支名，模型 id 与上下文进度条始终优先（顺带修复原实现先截断后比较、plan 段实际永远不会被丢弃的问题）
+- **preview**：`npm run footer-preview` 默认列宽 80 → 120（Mac 终端常见宽度），并新增速度四档与丢段顺序的演示
+
 ## [0.10.0] - 2026-09-14
 
 ### Added
