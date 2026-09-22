@@ -1,4 +1,4 @@
-# pi-codebuddy-kit
+# pi-kit
 
 pi 编码代理的腾讯 CodeBuddy 接入包（provider 注册 + 状态栏 + 系统提示词注入）。本文件是项目术语表。
 
