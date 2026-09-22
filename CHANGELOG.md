@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.11.1] - 2026-09-22
+
+### Fixed
+
+- **tc-footer**：⚡ tok/s 流式刷新节流 250ms → 1s——刷新节奏与 1s 滑动窗口对齐，每次刷新读到一整个新窗口，数字不再高频跳动
+
 ## [0.11.0] - 2026-09-22
 
 ### Added
