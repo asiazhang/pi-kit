@@ -14,6 +14,12 @@
  * original title restored verbatim. Terminals without a title stack
  * ignore the CSI silently.
  *
+ * Variants: one per tab-title animation, each with its own frame set and
+ * cadence. The running variant is drawn ONCE at module load — a fresh pi
+ * process (new session / restart) gets a random one, and it stays put for
+ * that process. All frames are single-width cells (braille, block, or
+ * geometric) so the title width never changes mid-animation.
+ *
  * Module state: a single in-flight ticker; start/stop are idempotent —
  * overlapping calls within the refcounted run loop are safe (see index.ts).
  * The timer is `unref()`d so a stray interval cannot block process exit.
@@ -21,11 +27,59 @@
 
 import { popTitleStack, pushTitleStack, writeOSC0 } from "./warp-notify"
 
-/** Braille spinner: 3-dot cluster with a clockwise rotating gap, equal width. */
-const SPINNER_FRAMES = ["⠴", "⠦", "⠖", "⠲"] as const
+interface SpinnerVariant {
+	/** Human label for previews and logs — never rendered to the terminal. */
+	readonly kind: string
+	/** Single-width glyph frames; the running index wraps mod frame count. */
+	readonly frames: readonly string[]
+	/** Milliseconds between frames — each variant picks its own cadence. */
+	readonly intervalMs: number
+}
 
-/** ~1.5 Hz — reads as ambient activity, not urgency. */
-const SPINNER_INTERVAL_MS = 160
+/**
+ * Candidate animations, one drawn per process at module load. Each cadence
+ * is tuned to its own frame count so every variant reads as calm motion.
+ */
+const SPINNER_VARIANTS: readonly SpinnerVariant[] = [
+	{
+		kind: "dots10",
+		frames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
+		intervalMs: 80,
+	},
+	{
+		kind: "breathe",
+		frames: ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█", "▇", "▆", "▅", "▄", "▃", "▂"],
+		intervalMs: 100,
+	},
+	{
+		kind: "bounce",
+		frames: ["⠁", "⠂", "⠄", "⠂"],
+		intervalMs: 160,
+	},
+	{
+		kind: "corner",
+		frames: ["◢", "◣", "◤", "◥"],
+		intervalMs: 180,
+	},
+	{
+		kind: "box",
+		frames: ["▏", "▎", "▍", "▌", "▋", "▊", "▉", "█", "▉", "▊", "▋", "▌", "▍", "▎"],
+		intervalMs: 100,
+	},
+	{
+		kind: "pie",
+		frames: ["◐", "◓", "◑", "◒"],
+		intervalMs: 180,
+	},
+]
+
+/** One random variant per pi process (a session restarts with a fresh pick). */
+function pickVariant(): SpinnerVariant {
+	const index = Math.floor(Math.random() * SPINNER_VARIANTS.length)
+	return SPINNER_VARIANTS[index]
+}
+
+const { frames: SPINNER_FRAMES, intervalMs: SPINNER_INTERVAL_MS } = pickVariant()
 
 /** Pure formatter — the mascot glyph is the only part that changes. */
 function activeTitle(frame: number, suffix: string): string {

@@ -12,9 +12,9 @@
  *                structured cli-agent event (toast + tab badge); the title
  *                field must be the `warp://cli-agent` URI — see index.ts
  *   OSC 0        ESC ] 0 ; <title> BEL
- *                tab title, rewritten every 160ms by title-spinner.ts — the
- *                per-tab braille animation is a terminal-side side effect of
- *                title churn, not part of the 777 protocol
+ *                tab title, rewritten every ~100ms by title-spinner.ts — the
+ *                per-tab animation is a terminal-side side effect of title
+ *                churn, not part of the 777 protocol
  *   CSI 22;0t    push title stack   ┐ snapshot before the spinner starts,
  *   CSI 23;0t    pop title stack    ┘ restore Pi's own tab title on stop
  */

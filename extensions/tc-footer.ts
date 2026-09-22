@@ -9,8 +9,8 @@
  *
  * Layout (single line, ANSI-safe truncation on narrow terminals):
  *
- *   ~/proj  42% ████████░░░░░░░░░░░░░░  ⏳5h 12% █████████░░░░░░░░ ↻2h15m  ⏳7d 92% ███████████████████░ ↻3d  model-id ⚡high (git-branch)
- *   └─ cwd ─┘  └──── context bar ────┘  └────── plan windows (5h + 7d) ──────┘  └─ right-aligned ─┘
+ *   ~/proj  67% █████████████░░░░░░░░ Smart Zone  ⏳5h 12% █████████░░░░░░░░ ↻2h15m  ⏳7d 92% ███████████████████░ ↻3d  model-id ⚡high (git-branch)
+ *   └─ cwd ─┘  └────────── context bar ──────────┘  └────── plan windows (5h + 7d) ──────┘  └─ right-aligned ─┘
  *
  * - Model-id brand colors by provider: tencent-copilot (CodeBuddy gateway)
  *   renders accent teal; the GLM coding plan (`zai-coding-cn`) renders
@@ -22,11 +22,19 @@
  * - Context bar uses ctx.getContextUsage(). Percent is computed against the
  *   EFFECTIVE window min(contextWindow, EFFECTIVE_CONTEXT_TOKENS): research
  *   (Chroma "context rot", LangWatch compaction study) shows quality degrades
- *   long before large windows fill, so a 1M-token model is treated as 450k.
+ *   long before large windows fill, so a 1M-token model is treated as 650k
+ *   (evidence: docs/research/effective-context-window.md).
+ *   Capped windows label the bar with a dim ` Smart Zone` (the layout example
+ *   shows one): percent and bar describe the Smart Zone — the quality-holding
+ *   effective window — not the spec-sheet window; uncapped windows skip the
+ *   label, their denominator is the nominal window anyway. See the Smart Zone
+ *   entry in CONTEXT.md.
  *   Color thresholds track pi's auto-compaction trigger
  *   (tokens > window - RESERVE_TOKENS): red at the trigger point of the
  *   effective window, yellow halfway below it. Windows capped by the
- *   450k ceiling relax red to 65% of the effective window.
+ *   650k ceiling relax red to 85% of the effective window: agent loops
+ *   tolerate high fill (Claude Code compacts a 1M session at 96.7%, pi at
+ *   98.4%), so the red line is a late warning, not a quality cliff.
  * - Coding plan windows (⏳5h 42% █████████░░░░░░░░ ↻2h15m  ⏳7d 92% ███████████████████░ ↻3d): GLM
  *   coding plan (provider `zai-coding-cn`) quota windows as 20-cell bars (5% per cell),
  *   polled every 5 minutes from the bigmodel.cn quota API with the stored credential
@@ -36,7 +44,10 @@
  *   (5h = mdLink blue, 7d = thinkingHigh purple) so they read as separate gauges; warning
  *   ≥70%, error ≥90% — alarm colors win over distinctiveness when a window runs low.
  *   Shown only while that provider is active; other providers see nothing. Data older
- *   than 10 minutes renders dim.
+ *   than 10 minutes renders dim. pi-web has no footer (`setFooter` is a no-op over
+ *   RPC), so the same segment is mirrored into its extension-status shelf through
+ *   `ctx.ui.setStatus`; the RPC extension theme is a no-op stub there (fg() returns
+ *   the text unchanged), so that copy carries ANSI SGR colors instead of theme colors.
  * - Git branch re-renders reactively via footerData.onBranchChange().
  * - Thinking level (⚡high) shown when the model supports reasoning;
  *   re-renders reactively via the thinking_level_select event. The plan
@@ -67,13 +78,15 @@ function formatCwd(cwd: string): string {
 }
 
 /**
- * Effective-context ceiling (tokens). Research on context rot (Chroma, 18
- * frontier models) and real-world Claude Code traces (LangWatch) shows model
- * quality degrades measurably long before large windows fill; recommended
- * compaction ranges land in 200k–450k. Windows larger than this are capped
- * so the bar reflects usable context, not the marketing number.
+ * Effective-context ceiling (tokens). Context-rot research (Chroma, 18
+ * frontier models) shows quality degrades long before large windows fill,
+ * while compaction studies land the sweet spot well under 1M: LangWatch's
+ * real-trace cost model optimizes around 220k–450k and calls >600k an
+ * "unjustified premium". 650k caps the bar at roughly that boundary —
+ * usable context, not the marketing number. Full evidence and the red-line
+ * reasoning: docs/research/effective-context-window.md.
  */
-const EFFECTIVE_CONTEXT_TOKENS = 450_000
+const EFFECTIVE_CONTEXT_TOKENS = 650_000
 
 /** pi's default compaction reserve (settings.json: compaction.reserveTokens). */
 const RESERVE_TOKENS = 16_384
@@ -82,12 +95,14 @@ const RESERVE_TOKENS = 16_384
  * Color thresholds relative to the effective window. Small windows track
  * pi's auto-compaction trigger (tokens > window - RESERVE_TOKENS): red
  * right at it, yellow halfway below. When the window is capped by
- * EFFECTIVE_CONTEXT_TOKENS (e.g. a 1M model treated as 450k), the cap is
- * already conservative, so red relaxes to 65% of the effective window.
+ * EFFECTIVE_CONTEXT_TOKENS (e.g. a 1M model treated as 650k), there is no
+ * quality cliff at the cap — agent loops tolerate high fill (Claude Code
+ * compacts a 1M session at 96.7%, pi at 98.4%) — so red is a late warning
+ * at 85% of the effective window, yellow at half that.
  */
 function thresholds(effectiveWindow: number): { red: number; yellow: number } {
 	const capped = effectiveWindow >= EFFECTIVE_CONTEXT_TOKENS
-	const red = capped ? 65 : ((effectiveWindow - RESERVE_TOKENS) / effectiveWindow) * 100
+	const red = capped ? 85 : ((effectiveWindow - RESERVE_TOKENS) / effectiveWindow) * 100
 	return { red, yellow: red / 2 }
 }
 
@@ -127,6 +142,9 @@ const MODEL_COLORS: Partial<Record<string, ThemeColor>> = {
 
 /** pi provider id of the GLM coding plan. */
 const PLAN_PROVIDER = "zai-coding-cn"
+
+/** Status key of the plan segment in UIs without a footer (pi-web status shelf). */
+const PLAN_STATUS_KEY = "coding-plan"
 
 /** Quota endpoint — same credential as chat, different host than the gateway. */
 const PLAN_QUOTA_URL = "https://open.bigmodel.cn/api/monitor/usage/quota/limit"
@@ -204,14 +222,38 @@ function formatCountdown(resetAt: number, now: number): string {
 	return hours >= 1 ? `${hours}h${minutes}m` : `${minutes}m`
 }
 
+/**
+ * Colors one span of the plan segment. The TUI footer passes the live theme;
+ * the status path (pi-web) passes ANSI SGR, because the RPC extension theme is
+ * a no-op stub whose `fg()` returns the text unchanged.
+ */
+type PlanColor = "mdLink" | "thinkingHigh" | "warning" | "error" | "dim"
+type PlanPainter = (color: PlanColor, text: string) => string
+
+/**
+ * ANSI 256-color SGR per plan color: the dark theme's gauge baselines
+ * (mdLink blue, thinkingHigh purple) and pi's warning/error hues, at mid-tone
+ * values that stay legible on the web UI's dark and light themes.
+ */
+const PLAN_ANSI: Record<PlanColor, string> = {
+	mdLink: "\x1b[38;5;110m",
+	thinkingHigh: "\x1b[38;5;139m",
+	warning: "\x1b[38;5;214m",
+	error: "\x1b[38;5;203m",
+	dim: "\x1b[38;5;245m",
+}
+
+/** Painter for the pi-web status line (ANSI SGR, reset after each span). */
+const planAnsi: PlanPainter = (color, text) => `${PLAN_ANSI[color]}${text}\x1b[0m`
+
 /** One full-width quota bar: prefix label + 20-cell bar (5% per cell) + reset countdown. */
 function quotaBar(
 	label: string,
 	w: PlanWindow | undefined,
-	baseline: ThemeColor,
+	baseline: PlanColor,
 	stale: boolean,
 	now: number,
-	theme: Theme,
+	paint: PlanPainter,
 ): string {
 	if (!w) return ""
 	const pct = Math.max(0, Math.min(100, Math.round(w.usedPercent)))
@@ -221,9 +263,9 @@ function quotaBar(
 	const filled = Math.ceil((pct / 100) * 20)
 	const bar = "█".repeat(filled) + "░".repeat(20 - filled)
 	const countdown = w.resetAt !== undefined ? ` ↻${formatCountdown(w.resetAt, now)}` : ""
-	if (stale) return theme.fg("dim", `${label} ${pct}% ${bar}${countdown}`)
+	if (stale) return paint("dim", `${label} ${pct}% ${bar}${countdown}`)
 	const color = pct >= 90 ? "error" : pct >= 70 ? "warning" : baseline
-	return theme.fg(color, `${label} ${pct}% ${bar}`) + (countdown ? theme.fg("dim", countdown) : "")
+	return paint(color, `${label} ${pct}% ${bar}`) + (countdown ? paint("dim", countdown) : "")
 }
 
 /**
@@ -233,11 +275,11 @@ function quotaBar(
  * ≥90% — alarm colors win over distinctiveness when a window runs low. A shared
  * snapshot means both turn dim together when stale; each reset countdown is dim.
  */
-function planSegment(ws: PlanWindows, now: number, theme: Theme): string {
+function planSegment(ws: PlanWindows, now: number, paint: PlanPainter): string {
 	const stale = now - ws.capturedAt > PLAN_DIM_MS
 	const parts = [
-		quotaBar("⏳5h", ws.fiveHour, "mdLink", stale, now, theme),
-		quotaBar("⏳7d", ws.weekly, "thinkingHigh", stale, now, theme),
+		quotaBar("⏳5h", ws.fiveHour, "mdLink", stale, now, paint),
+		quotaBar("⏳7d", ws.weekly, "thinkingHigh", stale, now, paint),
 	].filter(Boolean)
 	return parts.join(" ")
 }
@@ -249,14 +291,33 @@ export default function (pi: ExtensionAPI) {
 	// extension lifetime and only forwards to the current footer.
 	let requestFooterRender: (() => void) | null = null
 
-	// GLM coding plan 5h-window state: latest snapshot, resolved credential,
-	// single in-flight guard, and the 5-minute refresh timer (session-scoped).
+	// GLM coding plan state: latest window snapshot (5h + weekly), resolved
+	// credential, single in-flight guard, and the 5-minute refresh timer
+	// (session-scoped).
 	let planWindow: PlanWindows | undefined
 	let planKey: string | undefined
 	let planInFlight = false
 	let planTimer: ReturnType<typeof setInterval> | undefined
+	// Last text published to the pi-web status shelf, so an unchanged segment is
+	// not re-emitted (each setStatus pushes an update to the browser).
+	let planStatus: string | undefined
 
 	const planActive = (ctx: ExtensionContext): boolean => ctx.model?.provider === PLAN_PROVIDER
+
+	/**
+	 * Mirror the plan segment into UIs that have no footer (pi-web over RPC,
+	 * where `setFooter` is a no-op): its extension-status shelf renders
+	 * `setStatus` text, ANSI included. TUI keeps footer-only rendering, and a
+	 * non-plan provider clears the shelf.
+	 */
+	const syncPlanStatus = (ctx: ExtensionContext): void => {
+		if (ctx.mode === "tui" || !ctx.hasUI) return
+		const next =
+			planActive(ctx) && planWindow ? planSegment(planWindow, Date.now(), planAnsi) : undefined
+		if (next === planStatus) return
+		planStatus = next
+		ctx.ui.setStatus(PLAN_STATUS_KEY, next)
+	}
 
 	// Poll the bigmodel.cn quota endpoint. Best-effort: failures keep the last
 	// snapshot (which then renders dim). The key resolves through pi's auth
@@ -277,6 +338,7 @@ export default function (pi: ExtensionAPI) {
 			if (next) {
 				planWindow = next
 				requestFooterRender?.()
+				syncPlanStatus(ctx)
 			}
 		} catch {
 			// Network/parse errors: keep rendering the previous snapshot.
@@ -302,6 +364,7 @@ export default function (pi: ExtensionAPI) {
 	const apply = (ctx: ExtensionContext) => {
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			const dispose = footerData.onBranchChange(() => tui.requestRender())
+			const paint: PlanPainter = (color, text) => theme.fg(color, text)
 			requestFooterRender = () => tui.requestRender()
 			return {
 				dispose() {
@@ -323,7 +386,13 @@ export default function (pi: ExtensionAPI) {
 						if (pct !== null) {
 							const shown = Math.min(100, Math.round(pct))
 							const color = pct >= th.red ? "error" : pct >= th.yellow ? "warning" : "success"
-							context = ` ${theme.fg(color, `${shown}%`)} ${contextBar(pct, th, theme)}`
+							// When the nominal window is capped, percent and bar describe the
+							// effective window, not the spec-sheet one — label the Smart Zone,
+							// or "67%" on a 1M model reads as a miscalculation. Uncapped
+							// windows are self-explanatory and stay clean.
+							const capNote =
+								usage.contextWindow > EFFECTIVE_CONTEXT_TOKENS ? theme.fg("dim", " Smart Zone") : ""
+							context = ` ${theme.fg(color, `${shown}%`)} ${contextBar(pct, th, theme)}${capNote}`
 						}
 					}
 
@@ -340,7 +409,7 @@ export default function (pi: ExtensionAPI) {
 					// Plan segment only while the plan provider is active.
 					const plan =
 						ctx.model?.provider === PLAN_PROVIDER && planWindow
-							? planSegment(planWindow, Date.now(), theme)
+							? planSegment(planWindow, Date.now(), paint)
 							: ""
 					// Narrow terminals drop the plan segment before the model id.
 					const build = (withPlan: boolean): string => {
@@ -371,13 +440,14 @@ export default function (pi: ExtensionAPI) {
 	// the plan provider (it reads ctx.model at render time).
 	pi.on("model_select", async (_event, ctx) => {
 		requestFooterRender?.()
+		syncPlanStatus(ctx)
 		maybePollPlan(ctx)
 	})
 
 	// Re-apply on startup and after session switches/reloads with a fresh ctx.
 	// Plan state resets with the session; the timer runs while a UI is
-	// attached (the segment is footer-only) and ticks pollPlan, which no-ops
-	// while another provider is active.
+	// attached (footer plus pi-web status shelf) and ticks pollPlan, which
+	// no-ops while another provider is active.
 	pi.on("session_start", async (_event, ctx) => {
 		planWindow = undefined
 		planKey = undefined
@@ -385,6 +455,10 @@ export default function (pi: ExtensionAPI) {
 		if (enabled && ctx.hasUI) {
 			apply(ctx)
 			planTimer = setInterval(() => void pollPlan(ctx), PLAN_POLL_MS)
+			// pi-web never renders the footer, so its status shelf is the only
+			// plan surface: sync it and fetch the first snapshot up front.
+			syncPlanStatus(ctx)
+			maybePollPlan(ctx)
 		}
 	})
 
