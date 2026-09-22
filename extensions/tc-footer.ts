@@ -56,7 +56,7 @@
  *   average frozen after agent_end is exact. Colored by the 速度等级 tiers
  *   (<50 error, 50–100 warning, 100–200 success, ≥200 accent; the anchor is
  *   a 300 tok/s ceiling). Hidden until the first run; refreshes at most
- *   every 250ms while streaming (trailing flush).
+ *   every second while streaming (trailing flush).
  * - Thinking level (✦high) shown when the model supports reasoning;
  *   re-renders reactively via the thinking_level_select event. The plan
  *   segment re-renders via model_select. ⚡ belongs to the token-speed
@@ -167,7 +167,7 @@ const SPEED_WINDOW_MS = 1_000
 const SPEED_MIN_SPAN_MS = 100
 
 /** Footer refresh cadence while streaming: ≤1 render per interval, plus a trailing flush. */
-const SPEED_THROTTLE_MS = 250
+const SPEED_THROTTLE_MS = 1_000
 
 /** Word/punctuation token estimate applied to one streaming delta (`estimate` counting). */
 const TOKEN_REGEX = /\w+|[^\s\w]/g
