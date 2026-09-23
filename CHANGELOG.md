@@ -5,6 +5,13 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.14.0] - 2026-09-23
+
+### Added
+
+- **tc-footer**：token 速度段工具暂停态可视化——工具执行（含 Agent 子 agent 流，对父会话不可见）期间读数冻结，footer 置灰并以 `⚡⏸<数值> tok/s` 展示，不再用等级色伪装「仍在生成」；`tool_execution_start`/`tool_execution_end` 即时重绘，切态不等下一条 delta。`CONTEXT.md`「token 速度」词条同步
+- **tc-footer**：OpenCode Go（`opencode-go`）模型 id 着 syntaxVariable 蓝——与其 7d gauge 的 mdLink 基线同族再深一档（同 GLM 紫 pattern），coding plan provider 不再渲染为默认文本色
+
 ## [0.13.0] - 2026-09-23
 
 ### Changed
