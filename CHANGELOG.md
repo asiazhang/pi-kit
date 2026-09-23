@@ -5,6 +5,18 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.12.0] - 2026-09-23
+
+### Added
+
+- **coding-plan**：新增独立扩展，拥有 coding plan 配额数据面与两个展示面——按 provider 注册取数源与解析器（`sources.ts`）、5 分钟轮询、凭据解析缓存；footer 配额段委托其渲染，pi-web 状态架子由它直发。跨扩展经 ESM 单例共享快照，数据到达经 `onQuotaChange` 通知 footer 重绘，渲染帧不再触发取数。决策记录见 `docs/adr/0004-coding-plan-independent-extension.md`
+- **tc-footer**：配额窗口统计支持 OpenCode Go（`opencode-go`）——官方 usage 端点一次返回 rolling / weekly / monthly 三档窗口，footer 并列展示 ⏳5h / ⏳7d / ⏳30d（GLM 仍为 ⏳5h + ⏳7d）；各窗口健康态基线色互不相同，一眼区分当前 provider，告警阈值（≥70 黄 / ≥90 红）仍压过基线色。决策记录见 `docs/adr/0003-opencode-go-quota-windows.md`
+
+### Fixed
+
+- **tc-footer**：配额快照与 API key 按 provider 隔离——原实现全局只缓存一个 key，会话中途切换 provider 会拿错 key；切换后旧快照不再渲染、也不发布到 pi-web 状态栏
+- **tc-footer**：配额 `percent = 0` 时不再显示倒计时——上游此刻的 `resetsAt` 是「当前时刻 + 窗口」占位符而非真实重置时刻；解析完全防御式，字段异常的窗口直接跳过、全部不可用则整段不更新
+
 ## [0.11.1] - 2026-09-22
 
 ### Fixed
