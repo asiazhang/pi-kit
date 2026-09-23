@@ -4,7 +4,7 @@
  * Usage:
  *   node scripts/footer-preview.mjs [columns]
  *
- * Renders the exact same logic as extensions/tc-footer.ts (cwd shortening,
+ * Renders the exact same logic as extensions/tc-footer/ (cwd shortening,
  * effective-window percent, dynamic color thresholds, colors, token-speed
  * tiers) for a few representative states, using the real pi theme (dark by
  * default, PI_THEME to override).
@@ -19,13 +19,13 @@ const themeMod = await import(
 const theme = themeMod.getThemeByName(process.env.PI_THEME || "dark")
 if (!theme) throw new Error(`theme "${process.env.PI_THEME || "dark"}" not found`)
 
-/** Mirror of EFFECTIVE_CONTEXT_TOKENS in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of EFFECTIVE_CONTEXT_TOKENS in extensions/tc-footer/context.ts — keep in sync. */
 const EFFECTIVE_CONTEXT_TOKENS = 650_000
 
-/** Mirror of RESERVE_TOKENS in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of RESERVE_TOKENS in extensions/tc-footer/context.ts — keep in sync. */
 const RESERVE_TOKENS = 16_384
 
-/** Mirror of formatCwd() in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of formatCwd() in extensions/tc-footer/context.ts — keep in sync. */
 function formatCwd(cwd) {
 	const home = process.env.HOME || process.env.USERPROFILE
 	if (home) {
@@ -37,37 +37,37 @@ function formatCwd(cwd) {
 	return segments.slice(-2).join(sep) || sep
 }
 
-/** Mirror of thresholds() in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of thresholds() in extensions/tc-footer/context.ts — keep in sync. */
 function thresholds(effectiveWindow) {
 	const capped = effectiveWindow >= EFFECTIVE_CONTEXT_TOKENS
 	const red = capped ? 85 : ((effectiveWindow - RESERVE_TOKENS) / effectiveWindow) * 100
 	return { red, yellow: red / 2 }
 }
 
-/** Mirror of effectivePercent() in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of effectivePercent() in extensions/tc-footer/context.ts — keep in sync. */
 function effectivePercent(tokens, contextWindow) {
 	const eff = Math.min(contextWindow, EFFECTIVE_CONTEXT_TOKENS)
 	if (eff <= 0) return null
 	return (tokens / eff) * 100
 }
 
-/** Mirror of contextBar() in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of contextBar() in extensions/tc-footer/context.ts — keep in sync. */
 function contextBar(pct, th) {
 	const filled = Math.round((Math.min(100, pct) / 100) * 20)
 	const color = pct >= th.red ? "error" : pct >= th.yellow ? "warning" : "success"
 	return theme.fg(color, "█".repeat(filled) + "░".repeat(20 - filled))
 }
 
-/** Mirror of MODEL_COLORS in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of MODEL_COLORS in extensions/tc-footer/index.ts — keep in sync. */
 const MODEL_COLORS = {
 	"tencent-copilot": "accent",
 	"zai-coding-cn": "thinkingXhigh",
 }
 
-/** Mirror of SPEED_TIERS in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of SPEED_TIERS in extensions/tc-footer/speed.ts — keep in sync. */
 const SPEED_TIERS = { warn: 50, good: 100, top: 200 }
 
-/** Mirror of speedColor() in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of speedColor() in extensions/tc-footer/speed.ts — keep in sync. */
 function speedColor(tps) {
 	if (tps >= SPEED_TIERS.top) return "accent"
 	if (tps >= SPEED_TIERS.good) return "success"
@@ -75,10 +75,10 @@ function speedColor(tps) {
 	return "error"
 }
 
-/** Mirror of QUOTA_DIM_MS in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of QUOTA_DIM_MS in extensions/coding-plan/render.ts — keep in sync. */
 const QUOTA_DIM_MS = 10 * 60_000
 
-/** Mirror of formatCountdown() in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of formatCountdown() in extensions/coding-plan/render.ts — keep in sync. */
 function formatCountdown(resetAt, now) {
 	const ms = resetAt - now
 	if (ms <= 0) return "now"
@@ -89,20 +89,20 @@ function formatCountdown(resetAt, now) {
 	return hours >= 1 ? `${hours}h${minutes}m` : `${minutes}m`
 }
 
-/** Mirror of GLM_GAUGES in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of GLM_GAUGES in extensions/coding-plan/sources.ts — keep in sync. */
 const GLM_GAUGES = [
 	{ label: "⏳5h", baseline: "mdLink" },
 	{ label: "⏳7d", baseline: "thinkingHigh" },
 ]
 
-/** Mirror of GO_GAUGES in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of GO_GAUGES in extensions/coding-plan/sources.ts — keep in sync. */
 const GO_GAUGES = [
 	{ label: "⏳5h", baseline: "accent" },
 	{ label: "⏳7d", baseline: "mdLink" },
 	{ label: "⏳30d", baseline: "thinkingHigh" },
 ]
 
-/** Mirror of quotaBar() in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of quotaBar() in extensions/coding-plan/render.ts — keep in sync. */
 function quotaBar(g, stale, now, paint) {
 	const pct = Math.max(0, Math.min(100, Math.round(g.usedPercent)))
 	// 20 cells (5% each), ceil: any nonzero usage must light ≥1 cell (a few
@@ -116,13 +116,13 @@ function quotaBar(g, stale, now, paint) {
 	return paint(color, `${g.label} ${pct}% ${bar}`) + (countdown ? paint("dim", countdown) : "")
 }
 
-/** Mirror of quotaBars() in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of quotaBars() in extensions/coding-plan/render.ts — keep in sync. */
 function quotaBars(snapshot, now, paint) {
 	const stale = now - snapshot.capturedAt > QUOTA_DIM_MS
 	return snapshot.gauges.map((g) => quotaBar(g, stale, now, paint))
 }
 
-/** Mirror of PLAN_ANSI in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of PLAN_ANSI in extensions/coding-plan/render.ts — keep in sync. */
 const PLAN_ANSI = {
 	accent: "\x1b[38;5;109m",
 	mdLink: "\x1b[38;5;110m",
@@ -132,10 +132,10 @@ const PLAN_ANSI = {
 	dim: "\x1b[38;5;245m",
 }
 
-/** Mirror of planAnsi in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of planAnsi in extensions/coding-plan/render.ts — keep in sync. */
 const planAnsi = (color, text) => `${PLAN_ANSI[color]}${text}\x1b[0m`
 
-/** Mirror of render() in extensions/tc-footer.ts — keep in sync. */
+/** Mirror of render() in extensions/tc-footer/index.ts — keep in sync. */
 function renderLine(
 	cwd,
 	tokens,

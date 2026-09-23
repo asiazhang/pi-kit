@@ -11,7 +11,8 @@ pi extension package: Tencent CodeBuddy provider + custom footer, for the pi cod
 
 - `CONTEXT.md` — project glossary (上下文用量, coding plan, 配额窗口, 窗口重置); use its terms in comments, docs, and UI strings.
 - `extensions/warp-notify/` — Warp notifications, file layout mirrors upstream rpiv-warp (`protocol.ts` detection, `payload.ts` builders, `warp-notify.ts` OSC transport, `title-spinner.ts`, `config.ts`, `index.ts` registration + state machine). Run/block state is refcounted and shared across parent + subagent instances (ESM caching); read the state machine in `index.ts`'s header before adding or changing lifecycle handlers.
-- `extensions/tc-footer.ts` — status-line rendering. `scripts/footer-preview.mjs` mirrors its render functions; a render-logic change updates the mirrors in the same change, then re-runs `footer-preview`.
+- `extensions/tc-footer/` — status-line rendering (context bar in `context.ts`, token speed in `speed.ts`, composition + narrow-terminal drop order in `index.ts`). `scripts/footer-preview.mjs` mirrors its render functions; a render-logic change updates the mirrors in the same change, then re-runs `footer-preview`.
+- `extensions/coding-plan/` — coding plan quota access: per-provider sources + parsers (`sources.ts`), gauge rendering (`render.ts`), the shared snapshot + `onQuotaChange` (`state.ts`), the 5-minute poll + pi-web status shelf (`index.ts`). tc-footer renders its footer segment from that snapshot — see `docs/adr/0004-coding-plan-independent-extension.md`.
 - `extensions/tencent-copilot.ts` — provider + model catalog. Models are maintained as the `SNAPSHOT` tuple array; adding a model is one line.
 
 ## Edit discipline
