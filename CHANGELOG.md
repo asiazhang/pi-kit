@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.14.1] - 2026-09-23
+
+### Fixed
+
+- **tc-footer**：tok/s 流式读取改为按刷新节拍节流——上游 TUI 每条 delta 都整行重绘，原实现只有扩展自身重绘节流，滑动窗口读取仍按 delta 重算，数字在 delta 到达频率下仍会闪动；现读取重算与 `SPEED_THROTTLE_MS`（1s）对齐（新增 `liveAt` 节流时钟），窗口本身每个 delta 继续累积，每次重算仍读到完整的一秒
+
 ## [0.14.0] - 2026-09-23
 
 ### Added
