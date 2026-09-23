@@ -12,7 +12,14 @@ import { expect, test } from "bun:test"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { setQuotaSnapshot } from "../coding-plan/state"
 import registerFooter from "./index"
-import { speedColor } from "./speed"
+import {
+	finalizeRun,
+	freshSpeed,
+	reconcileSpeed,
+	recordSpeedDelta,
+	recordSpeedEnd,
+	speedColor,
+} from "./speed"
 
 type Handler = (event: unknown, ctx: ExtensionContext) => Promise<void>
 
@@ -279,4 +286,75 @@ test("narrow terminals drop plan → token speed → branch, model id last", asy
 		setQuotaSnapshot(undefined)
 		await fire(handlers, "session_shutdown", ctx)
 	}
+})
+
+// ---------------------------------------------------------------------------
+// Responses-protocol catch-up (openai-responses, e.g. muse-spark): the
+// upstream parser may drop output_text.delta events, while output_item.done
+// always yields a text_end / thinking_end with the full block. recordSpeedEnd
+// reconciles per block so the speed segment still works with zero deltas.
+// ---------------------------------------------------------------------------
+
+test("block end reconciles without double counting", () => {
+	const speed = freshSpeed()
+	speed.running = true
+	speed.startAt = Date.now()
+	// Deltas flowed normally: 3 estimated tokens on block 0.
+	expect(recordSpeedDelta(speed, "hello world hi", 0)).toBe(true)
+	expect(speed.tokens).toBe(3)
+	// The authoritative end text matches the deltas — nothing added.
+	expect(recordSpeedEnd(speed, 0, "hello world hi")).toBe(true)
+	expect(speed.tokens).toBe(3)
+	expect(speed.msgTokens).toBe(3)
+	// A block whose deltas were dropped upstream counts whole.
+	expect(recordSpeedEnd(speed, 1, "one two three four")).toBe(true)
+	expect(speed.tokens).toBe(7)
+	expect(speed.msgTokens).toBe(7)
+	// Empty blocks and idle runs schedule nothing.
+	expect(recordSpeedEnd(speed, 2, "   ")).toBe(false)
+	expect(recordSpeedEnd(freshSpeed(), 0, "hello")).toBe(false)
+	// Whole-run average over the reconciled total (deterministic clock).
+	speed.startAt = 1_000
+	expect(finalizeRun(speed, 2_000)).toBe(7)
+})
+
+test("block estimates reset per message", () => {
+	const speed = freshSpeed()
+	speed.running = true
+	speed.startAt = Date.now()
+	expect(recordSpeedEnd(speed, 0, "one two three")).toBe(true)
+	expect(speed.tokens).toBe(3)
+	// Next assistant message reuses contentIndex 0 — the old estimate must not
+	// leak, or the identical block would count zero.
+	reconcileSpeed(speed, { role: "assistant", usage: {} })
+	expect(recordSpeedEnd(speed, 0, "one two three")).toBe(true)
+	expect(speed.tokens).toBe(6)
+})
+
+test("token speed: end-only Responses-style stream still shows live then final", async () => {
+	const handlers = register()
+	const calls: StatusCall[] = []
+	const footers: FooterFactory[] = []
+	const ctx = makeCtx("meta", "tui", calls, { footers })
+
+	await fire(handlers, "session_start", ctx)
+	await emit(handlers, "agent_start", { type: "agent_start" }, ctx)
+	const end = (index: number, content: string): unknown => ({
+		type: "message_update",
+		message: { role: "assistant" },
+		assistantMessageEvent: { type: "text_end", contentIndex: index, content },
+	})
+	// Zero deltas — the Responses-protocol shape when output_text.delta events
+	// are dropped upstream. A single chunk has no span to divide by.
+	await emit(handlers, "message_update", end(0, Array(60).fill("token").join(" ")), ctx)
+	expect(renderFooter(footers, 120)).not.toContain("tok/s")
+	await sleep(150)
+	// Two chunks 150ms apart: a live reading exists despite zero deltas.
+	await emit(handlers, "message_update", end(1, Array(60).fill("token").join(" ")), ctx)
+	expect(renderFooter(footers, 120)).toMatch(/⚡\d+\.\d tok\/s/)
+	// Frozen whole-run average after agent_end, with no usage to reconcile from.
+	await emit(handlers, "message_end", { type: "message_end", message: { role: "assistant" } }, ctx)
+	await emit(handlers, "agent_end", { type: "agent_end", messages: [] }, ctx)
+	expect(renderFooter(footers, 120)).toMatch(/⚡\d+\.\d tok\/s/)
+	await fire(handlers, "session_shutdown", ctx)
 })

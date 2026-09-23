@@ -4,7 +4,13 @@
  * usage reconcile at message_end, and the tier colors. Pure state + update
  * functions — the footer owns the state instances, the render scheduling, and
  * the pi event wiring; the reading refresh beat itself lives here, since it
- * must gate the state the upstream TUI re-renders on every delta.
+ * must gate the state the upstream TUI re-renders on every delta. Deltas are
+ * best-effort under the Responses protocol (openai-responses): the upstream
+ * parser drops an output_text.delta whose output item hasn't been announced,
+ * while output_item.done always yields a text_end / thinking_end carrying the
+ * full block content — recordSpeedEnd() reconciles per block against that
+ * authoritative text, so Responses-protocol models (e.g. muse-spark) still
+ * get a reading.
  */
 
 /**
@@ -56,6 +62,9 @@ export interface SpeedState {
 	tokens: number
 	/** Estimated tokens in the assistant message currently streaming. */
 	msgTokens: number
+	/** Estimated tokens per content block of the current assistant message,
+	 *  keyed by contentIndex; cleared at each message_end (indices are per-message). */
+	blockTokens: number[]
 	/** Timestamped token counts inside SPEED_WINDOW_MS. */
 	window: { t: number; n: number }[]
 	/** Latest sliding-window tok/s; recomputed at most once per refresh beat. */
@@ -73,11 +82,30 @@ export const freshSpeed = (): SpeedState => ({
 	pausedMs: 0,
 	tokens: 0,
 	msgTokens: 0,
+	blockTokens: [],
 	window: [],
 	live: null,
 	liveAt: 0,
 	final: null,
 })
+
+/** Accumulate n tokens at now into the sliding window, refreshing the live
+ *  reading at most once per refresh beat (SPEED_THROTTLE_MS). The window keeps
+ *  every chunk so each recompute sees the full trailing second; only the
+ *  displayed reading is throttled. The span gate keeps a fresh window from
+ *  dividing by ~0ms and spiking to an absurd rate. */
+function pushWindow(speed: SpeedState, n: number, now: number): void {
+	speed.window.push({ t: now, n })
+	const cutoff = now - SPEED_WINDOW_MS
+	while (speed.window.length > 0 && speed.window[0].t <= cutoff) speed.window.shift()
+	const spanMs = speed.window.length > 0 ? now - speed.window[0].t : 0
+	if (spanMs < SPEED_MIN_SPAN_MS) return
+	if (now - speed.liveAt < SPEED_THROTTLE_MS) return
+	let sum = 0
+	for (const entry of speed.window) sum += entry.n
+	speed.live = sum / (spanMs / 1000)
+	speed.liveAt = now
+}
 
 /** Close an open tool pause, accumulating its duration into pausedMs. */
 export function closePause(speed: SpeedState): void {
@@ -88,7 +116,6 @@ export function closePause(speed: SpeedState): void {
 }
 
 /**
-/**
  * One streaming delta (text or thinking): count estimated tokens, refresh the
  * sliding-window reading — at most once per refresh beat (SPEED_THROTTLE_MS).
  * The window itself still accumulates every delta, so each recompute sees the
@@ -98,8 +125,12 @@ export function closePause(speed: SpeedState): void {
  * the displayed tok/s from flickering at the delta arrival rate. A delta means
  * generation is live, so it also closes any open tool pause. Returns true when
  * the delta counted — the caller schedules the throttled redraw only then.
+ *
+ * The per-block estimate feeds blockTokens, so the later text_end /
+ * thinking_end reconciles against the authoritative block text instead of
+ * double counting (see recordSpeedEnd).
  */
-export function recordSpeedDelta(speed: SpeedState, delta: string): boolean {
+export function recordSpeedDelta(speed: SpeedState, delta: string, contentIndex: number): boolean {
 	if (!speed.running) return false
 	closePause(speed)
 	const matches = delta.match(TOKEN_REGEX)
@@ -107,25 +138,46 @@ export function recordSpeedDelta(speed: SpeedState, delta: string): boolean {
 	const now = Date.now()
 	speed.tokens += matches.length
 	speed.msgTokens += matches.length
-	speed.window.push({ t: now, n: matches.length })
-	// Slide the window; keep the previous reading until the fresh span is
-	// long enough to divide by.
-	const cutoff = now - SPEED_WINDOW_MS
-	while (speed.window.length > 0 && speed.window[0].t <= cutoff) speed.window.shift()
-	const spanMs = speed.window.length > 0 ? now - speed.window[0].t : 0
-	if (spanMs < SPEED_MIN_SPAN_MS) return true
-	if (now - speed.liveAt < SPEED_THROTTLE_MS) return true
-	let sum = 0
-	for (const entry of speed.window) sum += entry.n
-	speed.live = sum / (spanMs / 1000)
-	speed.liveAt = now
+	speed.blockTokens[contentIndex] = (speed.blockTokens[contentIndex] ?? 0) + matches.length
+	pushWindow(speed, matches.length, now)
+	return true
+}
+
+/**
+ * Block end (text_end / thinking_end): reconcile one content block against its
+ * authoritative full text. Under the Responses protocol (openai-responses) the
+ * upstream parser drops an output_text.delta whose output item hasn't been
+ * announced yet, while output_item.done always yields an end event with the
+ * complete block — so for Responses-protocol models (e.g. muse-spark) the end
+ * events may be the ONLY token signal. Only the positive difference over the
+ * delta estimates is counted, hence Completions-protocol streams (whose end
+ * text matches the deltas) are unaffected. The catch-up chunk also feeds the
+ * sliding window, so spaced-out blocks still produce a live reading while
+ * streaming. Like a delta, an end means generation is live and closes any open
+ * tool pause. Returns true when the block carried tokens.
+ */
+export function recordSpeedEnd(speed: SpeedState, contentIndex: number, content: string): boolean {
+	if (!speed.running) return false
+	closePause(speed)
+	const prev = speed.blockTokens[contentIndex] ?? 0
+	const endMatches = content.match(TOKEN_REGEX)
+	const est = endMatches ? endMatches.length : 0
+	if (est === 0 && prev === 0) return false
+	speed.blockTokens[contentIndex] = Math.max(est, prev)
+	const diff = est - prev
+	if (diff > 0) {
+		speed.tokens += diff
+		speed.msgTokens += diff
+		pushWindow(speed, diff, Date.now())
+	}
 	return true
 }
 
 /**
  * message_end: swap this message's estimate for the provider's cumulative
  * output count (usage arrives only with the completed message), so the
- * frozen run average is exact rather than estimated.
+ * frozen run average is exact rather than estimated. Block estimates reset
+ * alongside — content indices are per-message, not per-run.
  */
 export function reconcileSpeed(
 	speed: SpeedState,
@@ -135,6 +187,7 @@ export function reconcileSpeed(
 	const actual = message.usage?.output
 	if (typeof actual === "number" && actual > 0) speed.tokens += actual - speed.msgTokens
 	speed.msgTokens = 0
+	speed.blockTokens = []
 }
 
 /**

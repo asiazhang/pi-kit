@@ -59,6 +59,7 @@ import {
 	freshSpeed,
 	reconcileSpeed,
 	recordSpeedDelta,
+	recordSpeedEnd,
 	SPEED_THROTTLE_MS,
 	type SpeedState,
 	speedColor,
@@ -231,8 +232,10 @@ export default function (pi: ExtensionAPI) {
 	// Streaming lifecycle: one run spans agent_start → agent_end (across tool
 	// calls); tool execution pauses the clock so wait time never reads as slow
 	// generation — while paused the segment dims with a ⏸ marker, since the
-	// live reading is frozen. Deltas drive the live reading, message_end
-	// reconciles the total with provider usage, agent_end freezes the
+	// live reading is frozen. Deltas drive the live reading; text_end /
+	// thinking_end reconcile each block against its authoritative full text
+	// (the Responses-protocol catch-up for dropped deltas — see speed.ts);
+	// message_end reconciles the total with provider usage, agent_end freezes the
 	// whole-run average and flushes a final render.
 	pi.on("agent_start", async () => {
 		speed = freshSpeed()
@@ -243,7 +246,13 @@ export default function (pi: ExtensionAPI) {
 	pi.on("message_update", async (event) => {
 		const streamEvent = event.assistantMessageEvent
 		if (streamEvent.type === "text_delta" || streamEvent.type === "thinking_delta") {
-			if (recordSpeedDelta(speed, streamEvent.delta)) scheduleSpeedRender()
+			if (recordSpeedDelta(speed, streamEvent.delta, streamEvent.contentIndex))
+				scheduleSpeedRender()
+		} else if (streamEvent.type === "text_end" || streamEvent.type === "thinking_end") {
+			// Responses-protocol catch-up (see speed.ts): end events carry the
+			// authoritative block text even when its deltas were dropped upstream.
+			if (recordSpeedEnd(speed, streamEvent.contentIndex, streamEvent.content))
+				scheduleSpeedRender()
 		}
 	})
 
