@@ -33,7 +33,7 @@ _Avoid_: 周窗口、每周窗口
 _Avoid_: 过期时间
 
 **token 速度 (Token speed)**:
-AI 流式输出时的实时生成吞吐，单位 tok/s；footer 以 `⚡<数值> tok/s` 展示，⚡ 图标专属此段。
+AI 流式输出时的实时生成吞吐，单位 tok/s；footer 以 `⚡<数值> tok/s` 展示，⚡ 图标专属此段。工具执行期间时钟暂停、读数冻结，footer 置灰并以 `⚡⏸<数值>` 展示。
 _Avoid_: TPS、生成速率
 
 **速度等级 (Speed tier)**:

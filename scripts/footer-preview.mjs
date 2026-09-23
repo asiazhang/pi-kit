@@ -62,6 +62,7 @@ function contextBar(pct, th) {
 const MODEL_COLORS = {
 	"tencent-copilot": "accent",
 	"zai-coding-cn": "thinkingXhigh",
+	"opencode-go": "syntaxVariable",
 }
 
 /** Mirror of SPEED_TIERS in extensions/tc-footer/speed.ts — keep in sync. */
@@ -146,6 +147,7 @@ function renderLine(
 	width,
 	provider = "",
 	speedTps = null,
+	speedPaused = false,
 ) {
 	const left = theme.fg("dim", formatCwd(cwd))
 	let context = ""
@@ -168,9 +170,15 @@ function renderLine(
 		? quotaBars(snapshot, Date.now(), (color, text) => theme.fg(color, text))
 		: []
 	// Mirror of the token-speed segment in tc-footer.ts: null until the first
-	// run finishes; the same tiers (速度等级 in CONTEXT.md) color it.
+	// Mirror of the token-speed segment in tc-footer.ts: null until the first
+	// run finishes; the same tiers (速度等级 in CONTEXT.md) color it; dimmed
+	// with a ⏸ marker while a tool executes (clock paused, reading frozen).
 	const speedSeg =
-		speedTps === null ? "" : ` ${theme.fg(speedColor(speedTps), `⚡${speedTps.toFixed(1)} tok/s`)}`
+		speedTps === null
+			? ""
+			: speedPaused
+				? ` ${theme.fg("dim", `⚡⏸${speedTps.toFixed(1)} tok/s`)}`
+				: ` ${theme.fg(speedColor(speedTps), `⚡${speedTps.toFixed(1)} tok/s`)}`
 	const branchPart = branch ? theme.fg("dim", ` (${branch})`) : ""
 	// Narrow terminals drop quota gauges (the last, slowest window first) →
 	// the whole quota segment → token speed → branch; the model id and context
@@ -267,6 +275,18 @@ const cases = [
 		plan(42),
 		"zai-coding-cn",
 		280,
+	],
+	[
+		"128k window @ 30k + speed 152.4 paused while a tool runs (dim + ⏸ marker, tier color suspended)",
+		30_000,
+		131_072,
+		"glm-5.3",
+		"high",
+		"master",
+		plan(8),
+		"zai-coding-cn",
+		152.4,
+		true,
 	],
 	[
 		"128k window @ 70k + plan 75% (yellow + yellow)",
@@ -380,7 +400,7 @@ const cases = [
 		"tencent-copilot",
 	],
 	[
-		"OpenCode Go 4% / 3% (teal + blue; ⏳7d dropped when narrow)",
+		"OpenCode Go 4% / 3% (teal + blue gauges; model id in syntaxVariable blue; ⏳7d dropped when narrow)",
 		30_000,
 		131_072,
 		"mimo-v2.6-flash",
@@ -421,6 +441,7 @@ for (const [
 	snapshot,
 	provider,
 	speedTps,
+	speedPaused,
 ] of cases) {
 	console.log(`${label}:`)
 	console.log(
@@ -435,6 +456,7 @@ for (const [
 			width,
 			provider,
 			speedTps ?? null,
+			speedPaused === true,
 		),
 	)
 	console.log()

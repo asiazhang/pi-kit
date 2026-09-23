@@ -25,6 +25,12 @@
  * - Thinking level (✦high) shown when the model supports reasoning;
  *   re-renders reactively via the thinking_level_select event. ⚡ belongs to
  *   the token-speed segment — the two icons never swap.
+ * - Tool execution pauses the speed clock and dims the segment with a ⏸ marker:
+ *   the live reading is frozen while a tool runs (subagent streams are
+ *   invisible to the parent session), so the tier color must not imply motion.
+ * - The OpenCode Go plan's model id (`opencode-go`) renders syntaxVariable
+ *   blue — one step deeper than its 7d gauge's mdLink baseline, mirroring the
+ *   GLM purple pattern, so plan-backed providers never read as plain text.
  * - Narrow terminals drop segments in order: quota gauges (the last,
  *   slowest window first) → the whole quota segment → token speed → branch;
  *   the model id and context bar always survive, and the whole line
@@ -63,15 +69,20 @@ import {
 // ============================================================================
 
 /**
+/**
  * Model-id brand colors by provider. tencent-copilot (CodeBuddy gateway)
  * reads as accent teal; the GLM coding plan (`zai-coding-cn`) as thinkingXhigh
  * purple — same family as the 7-day quota gauge's thinkingHigh, one step
- * deeper so the two read as separate things. Providers not listed keep the
- * default text color.
+ * deeper so the two read as separate things. The OpenCode Go plan
+ * (`opencode-go`) as syntaxVariable blue — same pattern: its 7-day gauge
+ * baseline is mdLink, so the model id sits one step deeper in the same blue
+ * family (clear of the accent teal its 5h gauge shares with tencent-copilot).
+ * Providers not listed keep the default text color.
  */
 const MODEL_COLORS: Partial<Record<string, ThemeColor>> = {
 	"tencent-copilot": "accent",
 	"zai-coding-cn": "thinkingXhigh",
+	"opencode-go": "syntaxVariable",
 }
 
 export default function (pi: ExtensionAPI) {
@@ -154,12 +165,18 @@ export default function (pi: ExtensionAPI) {
 							? ` ${theme.fg("accent", `✦${ctx.thinkingLevel}`)}`
 							: ""
 
-					// Live tok/s while a run streams; the frozen whole-run average
-					// after agent_end; nothing before the first run.
+					// Live tok/s while a run streams; dimmed with a ⏸ marker while a tool
+					// executes (the reading is frozen and stale, so the tier color must
+					// not pretend it's still moving); the frozen whole-run average after
+					// agent_end; nothing before the first run.
+					const paused = speed.running && speed.pausedAt !== undefined
 					const tps = speed.running ? speed.live : speed.final
 					const speedSeg =
-						tps !== null ? ` ${theme.fg(speedColor(tps), `⚡${tps.toFixed(1)} tok/s`)}` : ""
-
+						tps !== null
+							? paused
+								? ` ${theme.fg("dim", `⚡⏸${tps.toFixed(1)} tok/s`)}`
+								: ` ${theme.fg(speedColor(tps), `⚡${tps.toFixed(1)} tok/s`)}`
+							: ""
 					const branch = footerData.getGitBranch()
 					const provider = ctx.model?.provider ?? ""
 					const modelId = ctx.model?.id ?? "no-model"
@@ -213,9 +230,10 @@ export default function (pi: ExtensionAPI) {
 
 	// Streaming lifecycle: one run spans agent_start → agent_end (across tool
 	// calls); tool execution pauses the clock so wait time never reads as slow
-	// generation. Deltas drive the live reading, message_end reconciles the
-	// total with provider usage, agent_end freezes the whole-run average and
-	// flushes a final render.
+	// generation — while paused the segment dims with a ⏸ marker, since the
+	// live reading is frozen. Deltas drive the live reading, message_end
+	// reconciles the total with provider usage, agent_end freezes the
+	// whole-run average and flushes a final render.
 	pi.on("agent_start", async () => {
 		speed = freshSpeed()
 		speed.running = true
@@ -234,11 +252,18 @@ export default function (pi: ExtensionAPI) {
 	})
 
 	pi.on("tool_execution_start", async () => {
-		if (speed.running && speed.pausedAt === undefined) speed.pausedAt = Date.now()
+		if (speed.running && speed.pausedAt === undefined) {
+			speed.pausedAt = Date.now()
+			// Swap to the dimmed ⏸ marker right away — there are no deltas while
+			// a tool runs, so the next render would otherwise never come.
+			flushSpeedRender()
+		}
 	})
 
 	pi.on("tool_execution_end", async () => {
 		closePause(speed)
+		// Restore the tier-colored reading immediately, not at the next delta.
+		flushSpeedRender()
 	})
 
 	pi.on("agent_end", async () => {
