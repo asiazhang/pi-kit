@@ -99,7 +99,6 @@ const GLM_GAUGES = [
 const GO_GAUGES = [
 	{ label: "⏳5h", baseline: "accent" },
 	{ label: "⏳7d", baseline: "mdLink" },
-	{ label: "⏳30d", baseline: "thinkingHigh" },
 ]
 
 /** Mirror of quotaBar() in extensions/coding-plan/render.ts — keep in sync. */
@@ -225,13 +224,12 @@ const plan = (fiveHourPct, ageMin = 0, weeklyPct = null) => {
 	return snapshot
 }
 
-// OpenCode Go trio mock: rolling 5h + weekly + monthly gauges.
-const go = (rollingPct, ageMin = 0, weeklyPct = 12, monthlyPct = 34) => ({
+// OpenCode Go mock: rolling 5h + weekly gauges (monthly not tracked).
+const go = (rollingPct, ageMin = 0, weeklyPct = 12) => ({
 	capturedAt: Date.now() - ageMin * 60_000,
 	gauges: [
 		{ ...GO_GAUGES[0], usedPercent: rollingPct, resetAt: Date.now() + 85 * 60_000 },
 		{ ...GO_GAUGES[1], usedPercent: weeklyPct, resetAt: Date.now() + 3 * 86_400_000 },
-		{ ...GO_GAUGES[2], usedPercent: monthlyPct, resetAt: Date.now() + 19 * 86_400_000 },
 	],
 })
 
@@ -382,23 +380,23 @@ const cases = [
 		"tencent-copilot",
 	],
 	[
-		"OpenCode Go 4% / 3% / 1% (teal + blue + purple; ⏳7d/⏳30d dropped when narrow)",
+		"OpenCode Go 4% / 3% (teal + blue; ⏳7d dropped when narrow)",
 		30_000,
 		131_072,
 		"mimo-v2.6-flash",
 		"high",
 		"main",
-		go(4, 0, 3, 1),
+		go(4, 0, 3),
 		"opencode-go",
 	],
 	[
-		"OpenCode Go 5h 72% + monthly 75% (warnings override the baselines)",
+		"OpenCode Go 5h 72% + weekly 75% (warnings override the baselines)",
 		30_000,
 		131_072,
 		"mimo-v2.6-flash",
 		"high",
 		"main",
-		go(72, 0, 40, 75),
+		go(72, 0, 75),
 		"opencode-go",
 	],
 	[
@@ -408,7 +406,7 @@ const cases = [
 		"mimo-v2.6-flash",
 		"high",
 		"main",
-		go(42, 15, 30, 20),
+		go(42, 15, 30),
 		"opencode-go",
 	],
 ]
@@ -496,7 +494,7 @@ console.log(
 	),
 )
 console.log()
-console.log(`160 cols — OpenCode Go drops the ⏳30d gauge first:`)
+console.log(`130 cols — OpenCode Go drops the ⏳7d gauge first:`)
 console.log(
 	renderLine(
 		cwd,
@@ -505,13 +503,13 @@ console.log(
 		"mimo-v2.6-flash",
 		"high",
 		"main",
-		go(42, 0, 30, 75),
-		160,
+		go(42, 0, 30),
+		130,
 		"opencode-go",
 	),
 )
 console.log()
-console.log(`200 cols — all three OpenCode Go gauges fit:`)
+console.log(`160 cols — both OpenCode Go gauges fit:`)
 console.log(
 	renderLine(
 		cwd,
@@ -520,8 +518,8 @@ console.log(
 		"mimo-v2.6-flash",
 		"high",
 		"main",
-		go(42, 0, 30, 75),
-		200,
+		go(42, 0, 30),
+		160,
 		"opencode-go",
 	),
 )
@@ -534,7 +532,7 @@ for (const [label, ws] of [
 	["5h 8% + weekly 85%", plan(8, 0, 85)],
 	["5h 95% (red)", plan(95, 0, 92)],
 	["stale >10min (dim)", plan(42, 15)],
-	["OpenCode Go trio 42 / 30 / 75", go(42, 0, 30, 75)],
+	["OpenCode Go 42 / 30", go(42, 0, 30)],
 ]) {
 	console.log(`${label}:`)
 	console.log(quotaBars(ws, Date.now(), planAnsi).join(" "))

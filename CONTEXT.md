@@ -28,10 +28,6 @@ _Avoid_: 5 小时限额
 coding plan 的周配额窗口，自订购起以 7 天为周期刷新；是全周的硬上限，5h 窗口耗尽、重置后它才成为真正的约束。footer 以 ⏳7d 展示。
 _Avoid_: 周窗口、每周窗口
 
-**30 天窗口 (Monthly window)**:
-coding plan 的月配额窗口，自订购日起以月为周期刷新；是三档窗口中额度最大（即最松）的一档，当前为 OpenCode Go 独有。footer 以 ⏳30d 展示。
-_Avoid_: 月窗口、月限额
-
 **窗口重置 (Window reset)**:
 配额窗口重置、配额恢复的时刻；footer 以 ↻ 倒计时展示。
 _Avoid_: 过期时间

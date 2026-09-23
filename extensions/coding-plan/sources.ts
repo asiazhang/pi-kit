@@ -20,11 +20,10 @@ const GLM_GAUGES: readonly QuotaSpec[] = [
 	{ label: "⏳7d", baseline: "thinkingHigh" },
 ]
 
-/** OpenCode Go windows: rolling 5h, weekly, monthly (billing anniversary). */
+/** OpenCode Go windows: rolling 5h + weekly; the upstream monthly window is not tracked. */
 const GO_GAUGES: readonly QuotaSpec[] = [
 	{ label: "⏳5h", baseline: "accent" },
 	{ label: "⏳7d", baseline: "mdLink" },
-	{ label: "⏳30d", baseline: "thinkingHigh" },
 ]
 
 /** GLM quota endpoint — same credential as chat, different host than the gateway. */
@@ -85,7 +84,9 @@ export function parseGlmQuotas(json: unknown): QuotaGauge[] | undefined {
 }
 
 /**
- * OpenCode Go usage response → gauges (rolling 5h / weekly / monthly).
+ * OpenCode Go usage response → gauges (rolling 5h / weekly). The payload also
+ * carries a monthly window; it is deliberately not tracked, so `monthly` is
+ * ignored here.
  * Verified live 2026-09-23 —
  * `{ usage: { rolling: { status: "ok", percent: 4, resetsAt: "…Z" }, weekly: …, monthly: … } }`.
  * Each window is parsed defensively (the endpoint reshaped its response within
@@ -97,7 +98,7 @@ export function parseGlmQuotas(json: unknown): QuotaGauge[] | undefined {
 export function parseGoQuotas(json: unknown): QuotaGauge[] | undefined {
 	const usage = (json as { usage?: Record<string, unknown> } | null)?.usage
 	if (!usage || typeof usage !== "object") return undefined
-	const windows = ["rolling", "weekly", "monthly"]
+	const windows = ["rolling", "weekly"]
 	const gauges: QuotaGauge[] = []
 	for (let i = 0; i < GO_GAUGES.length; i++) {
 		const w = usage[windows[i]]

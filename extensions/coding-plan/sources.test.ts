@@ -25,12 +25,12 @@ const GO_OK = {
 	},
 }
 
-test("OpenCode Go: three gauges in order with their own baseline colors", () => {
+test("OpenCode Go: two gauges in order with their own baseline colors (monthly payload ignored)", () => {
 	const gauges = parseGoQuotas(GO_OK)
 	expect(gauges).toBeDefined()
-	expect(gauges?.map((g) => g.label)).toEqual(["⏳5h", "⏳7d", "⏳30d"])
-	expect(gauges?.map((g) => g.baseline)).toEqual(["accent", "mdLink", "thinkingHigh"])
-	expect(gauges?.map((g) => g.usedPercent)).toEqual([4, 3, 1])
+	expect(gauges?.map((g) => g.label)).toEqual(["⏳5h", "⏳7d"])
+	expect(gauges?.map((g) => g.baseline)).toEqual(["accent", "mdLink"])
+	expect(gauges?.map((g) => g.usedPercent)).toEqual([4, 3])
 	expect(gauges?.[0].resetAt).toBe(Date.parse(GO_RESET.rolling))
 })
 
@@ -46,15 +46,15 @@ test("OpenCode Go: 0% drops the now-plus-window placeholder countdown", () => {
 	expect(gauges?.[1].resetAt).toBe(Date.parse(GO_RESET.weekly))
 })
 
-test("OpenCode Go: skips windows without status ok / numeric percent / valid date", () => {
+test("OpenCode Go: skips unusable windows and never surfaces the monthly one", () => {
 	const gauges = parseGoQuotas({
 		usage: {
 			rolling: { status: "exceeded", percent: 4, resetsAt: GO_RESET.rolling },
-			weekly: { status: "ok", percent: "50", resetsAt: GO_RESET.weekly },
-			monthly: { status: "ok", percent: 2, resetsAt: "not-a-date" },
+			weekly: { status: "ok", percent: 12, resetsAt: "not-a-date" },
+			monthly: { status: "ok", percent: 34, resetsAt: GO_RESET.monthly },
 		},
 	})
-	expect(gauges?.map((g) => g.label)).toEqual(["⏳30d"])
+	expect(gauges?.map((g) => g.label)).toEqual(["⏳7d"])
 	expect(gauges?.[0].resetAt).toBeUndefined()
 })
 
@@ -62,6 +62,8 @@ test("OpenCode Go: unusable payloads parse to undefined", () => {
 	expect(parseGoQuotas(null)).toBeUndefined()
 	expect(parseGoQuotas({})).toBeUndefined()
 	expect(parseGoQuotas({ usage: { rolling: { status: "ok", percent: "4" } } })).toBeUndefined()
+	// The monthly window alone is not enough: it is deliberately not tracked.
+	expect(parseGoQuotas({ usage: { monthly: { status: "ok", percent: 50 } } })).toBeUndefined()
 })
 
 test("GLM: unit 3 → ⏳5h mdLink, unit 6 → ⏳7d thinkingHigh", () => {

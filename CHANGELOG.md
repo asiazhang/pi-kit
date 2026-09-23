@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Changed
+
+- **coding-plan**：footer 配额窗口不再展示 OpenCode Go 的 30 天窗口（`⏳30d`）——monthly 是最松的一档、日常几乎不构成约束，只保留 `⏳5h` + `⏳7d`；usage 端点返回的 `monthly` 字段直接忽略，术语表相应移除「30 天窗口」词条
+
 ## [0.12.0] - 2026-09-23
 
 ### Added
