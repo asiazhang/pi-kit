@@ -179,6 +179,14 @@ test("token speed: hidden before the first run, live while streaming, exact aver
 	expect(live).toContain("✦high")
 	expect(live).not.toContain("⚡high")
 
+	// The displayed reading is throttled to the refresh beat: within
+	// SPEED_THROTTLE_MS of the first recompute, further deltas keep the window
+	// growing but must not change the displayed tok/s (the upstream TUI
+	// re-renders per delta, so this is what stops the number flickering).
+	await emit(handlers, "message_update", textDelta("tokens keep arriving"), ctx)
+	await emit(handlers, "message_update", textDelta("more tokens still"), ctx)
+	expect(parseTps(renderFooter(footers, 120))).toBe(parseTps(live))
+
 	// Provider usage arrives with the completed message and replaces the estimate.
 	await emit(
 		handlers,
@@ -193,7 +201,6 @@ test("token speed: hidden before the first run, live while streaming, exact aver
 	expect(parseTps(renderFooter(footers, 120))).toBeGreaterThan(400)
 	// Frozen after the run: the segment stays until the next agent_start.
 	expect(renderFooter(footers, 120)).toContain("tok/s")
-
 	await fire(handlers, "session_shutdown", ctx)
 })
 

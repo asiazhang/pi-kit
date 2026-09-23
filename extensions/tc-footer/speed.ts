@@ -2,8 +2,9 @@
  * The token 速度 segment (see the token 速度 / 速度等级 entries in
  * CONTEXT.md): the per-run SpeedState, the sliding-window live reading, the
  * usage reconcile at message_end, and the tier colors. Pure state + update
- * functions — the footer owns the state instances, the render throttle, and
- * the pi event wiring.
+ * functions — the footer owns the state instances, the render scheduling, and
+ * the pi event wiring; the reading refresh beat itself lives here, since it
+ * must gate the state the upstream TUI re-renders on every delta.
  */
 
 /**
@@ -22,8 +23,12 @@ const SPEED_WINDOW_MS = 1_000
  * dividing the first delta by ~0ms would spike to an absurd rate.
  */
 const SPEED_MIN_SPAN_MS = 100
-
-/** Footer refresh cadence while streaming: ≤1 render per interval, plus a trailing flush. */
+/**
+ * Footer refresh cadence while streaming: the live reading recomputes at most
+ * once per interval, and the extension's own render requests are throttled to
+ * the same beat. (The upstream TUI re-renders the whole line on every delta,
+ * so gating the reading itself is what keeps the displayed value stable.)
+ */
 export const SPEED_THROTTLE_MS = 1_000
 
 /** Word/punctuation token estimate applied to one streaming delta (`estimate` counting). */
@@ -53,8 +58,10 @@ export interface SpeedState {
 	msgTokens: number
 	/** Timestamped token counts inside SPEED_WINDOW_MS. */
 	window: { t: number; n: number }[]
-	/** Latest sliding-window tok/s; kept until a fresh window spans enough time. */
+	/** Latest sliding-window tok/s; recomputed at most once per refresh beat. */
 	live: number | null
+	/** Epoch ms of the last live-reading recompute — the throttle clock. */
+	liveAt: number
 	/** Frozen whole-run average after agent_end, until the next run. */
 	final: number | null
 }
@@ -68,6 +75,7 @@ export const freshSpeed = (): SpeedState => ({
 	msgTokens: 0,
 	window: [],
 	live: null,
+	liveAt: 0,
 	final: null,
 })
 
@@ -80,10 +88,16 @@ export function closePause(speed: SpeedState): void {
 }
 
 /**
- * One streaming delta (text or thinking): count estimated tokens, refresh
- * the sliding-window reading. A delta means generation is live, so it also
- * closes any open tool pause. Returns true when the delta counted — the
- * caller schedules the throttled redraw only then.
+/**
+ * One streaming delta (text or thinking): count estimated tokens, refresh the
+ * sliding-window reading — at most once per refresh beat (SPEED_THROTTLE_MS).
+ * The window itself still accumulates every delta, so each recompute sees the
+ * full trailing second; only the displayed reading is throttled. This matters
+ * because the upstream TUI re-renders the whole line on every delta regardless
+ * of the extension's own render throttle — gating the reading is what keeps
+ * the displayed tok/s from flickering at the delta arrival rate. A delta means
+ * generation is live, so it also closes any open tool pause. Returns true when
+ * the delta counted — the caller schedules the throttled redraw only then.
  */
 export function recordSpeedDelta(speed: SpeedState, delta: string): boolean {
 	if (!speed.running) return false
@@ -99,11 +113,12 @@ export function recordSpeedDelta(speed: SpeedState, delta: string): boolean {
 	const cutoff = now - SPEED_WINDOW_MS
 	while (speed.window.length > 0 && speed.window[0].t <= cutoff) speed.window.shift()
 	const spanMs = speed.window.length > 0 ? now - speed.window[0].t : 0
-	if (spanMs >= SPEED_MIN_SPAN_MS) {
-		let sum = 0
-		for (const entry of speed.window) sum += entry.n
-		speed.live = sum / (spanMs / 1000)
-	}
+	if (spanMs < SPEED_MIN_SPAN_MS) return true
+	if (now - speed.liveAt < SPEED_THROTTLE_MS) return true
+	let sum = 0
+	for (const entry of speed.window) sum += entry.n
+	speed.live = sum / (spanMs / 1000)
+	speed.liveAt = now
 	return true
 }
 
