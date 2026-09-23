@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.14.2] - 2026-09-23
+
+### Fixed
+
+- **tc-footer**：Responses 协议（openai-responses）下 tok/s 不再失灵——上游解析器会丢弃尚未宣告的 output_item 的 output_text.delta，而 output_item.done 总是携带完整块文本；现 `text_end`/`thinking_end` 按块对账，只补算正差额（Completions 协议的结束文本与 delta 一致，不受影响），掉 delta 的模型（如 muse-spark）零 delta 也能出读数。块级估算随 message_end 重置，防止跨消息泄漏
+
 ## [0.14.1] - 2026-09-23
 
 ### Fixed
