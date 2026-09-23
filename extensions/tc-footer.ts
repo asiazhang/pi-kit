@@ -27,16 +27,19 @@
  *   (tokens > window - RESERVE_TOKENS): red at the trigger point of the
  *   effective window, yellow halfway below it. Windows capped by the
  *   450k ceiling relax red to 65% of the effective window.
- * - Coding plan windows (⏳5h 42% █████████░░░░░░░░ ↻2h15m  ⏳7d 92% ███████████████████░ ↻3d): GLM
- *   coding plan (provider `zai-coding-cn`) quota windows as 20-cell bars (5% per cell),
- *   polled every 5 minutes from the bigmodel.cn quota API with the stored credential
- *   (resolved via modelRegistry.getApiKeyForProvider — no direct auth.json
- *   reads). Two independent gauges: the 5-hour window (unit 3, rolling throttle) and the
- *   7-day window (unit 6, weekly hard ceiling). Healthy-state baseline colors differ
- *   (5h = mdLink blue, 7d = thinkingHigh purple) so they read as separate gauges; warning
- *   ≥70%, error ≥90% — alarm colors win over distinctiveness when a window runs low.
- *   Shown only while that provider is active; other providers see nothing. Data older
- *   than 10 minutes renders dim.
+ * - Coding plan quota windows (⏳5h 42% █████████░░░░░░░░ ↻2h15m  ⏳7d 92% ███████████████████░ ↻3d): 20-cell bars (5% per cell), polled every 5 minutes from the provider's quota
+ *   API with the stored credential (resolved via
+ *   modelRegistry.getApiKeyForProvider — no direct auth.json reads). Two sources:
+ *   GLM coding plan (`zai-coding-cn`, bigmodel.cn quota API — unit 3 = 5h
+ *   rolling throttle, unit 6 = 7-day weekly hard ceiling) and OpenCode Go
+ *   (`opencode-go`, /zen/go/v1/usage — rolling 5h, weekly, monthly ⏳30d).
+ *   Every gauge gets its own healthy baseline so they read as separate
+ *   instruments (GLM: 5h mdLink blue, 7d thinkingHigh purple; OpenCode Go: 5h
+ *   accent teal, 7d mdLink blue, 30d thinkingHigh purple — a different color
+ *   than GLM at each shared label); warning ≥70%, error ≥90% — alarm colors win
+ *   over distinctiveness when a window runs low. Shown only while a source
+ *   provider is active; other providers see nothing. Data older than 10 minutes
+ *   renders dim.
  * - Git branch re-renders reactively via footerData.onBranchChange().
  * - Thinking level (⚡high) shown when the model supports reasoning;
  *   re-renders reactively via the thinking_level_select event. The plan
@@ -122,47 +125,82 @@ const MODEL_COLORS: Partial<Record<string, ThemeColor>> = {
 }
 
 // ============================================================================
-// Coding plan window (GLM coding plan, provider `zai-coding-cn`)
+// Coding plan quota windows (per provider)
 // ============================================================================
 
-/** pi provider id of the GLM coding plan. */
-const PLAN_PROVIDER = "zai-coding-cn"
+/** Healthy-state label + baseline color of one quota gauge. */
+interface QuotaSpec {
+	/** Gauge label, e.g. "⏳5h". */
+	label: string
+	/** Baseline color while healthy; warning ≥70% / error ≥90% win over it. */
+	baseline: ThemeColor
+}
 
-/** Quota endpoint — same credential as chat, different host than the gateway. */
-const PLAN_QUOTA_URL = "https://open.bigmodel.cn/api/monitor/usage/quota/limit"
-
-/** Poll cadence; also the snapshot age that triggers a lazy re-poll. */
-const PLAN_POLL_MS = 5 * 60_000
-
-/** Snapshots older than this render dim (possibly inaccurate, e.g. offline). */
-const PLAN_DIM_MS = 10 * 60_000
-
-/** Quota fetch timeout. */
-const PLAN_TIMEOUT_MS = 10_000
-
-/** One quota-window reading: used percent + reset instant. */
-interface PlanWindow {
-	/** Used percent 0–100 (response `percentage`). */
+/** One gauge reading: spec + used percent + window reset instant. */
+interface QuotaGauge extends QuotaSpec {
+	/** Used percent 0–100. */
 	usedPercent: number
-	/** Window reset instant (epoch ms, response `nextResetTime`). */
+	/** Window reset instant (epoch ms). */
 	resetAt?: number
 }
 
-/** Combined quota snapshot: the rolling 5h window and the weekly 7-day window. */
-interface PlanWindows {
-	/** 5h window (unit 3) — rolling throttle. */
-	fiveHour?: PlanWindow
-	/** 7-day window (unit 6) — weekly hard ceiling. */
-	weekly?: PlanWindow
+/** One quota snapshot: the reading's provider + when it was fetched. */
+interface QuotaSnapshot {
+	/** pi provider id this reading belongs to (stale cross-provider guard). */
+	provider: string
+	/** Gauges in render order; the last is dropped first on narrow terminals. */
+	gauges: QuotaGauge[]
 	/** When this snapshot was fetched (Date.now()). */
 	capturedAt: number
 }
 
-/** Extract one window (by unit) from the quota limits array. */
-function toPlanWindow(
+/** Quota endpoint + response parser for one coding-plan provider. */
+interface QuotaSource {
+	/** Quota endpoint — same credential as chat. */
+	url: string
+	/** Response → gauges, or undefined when nothing parses. */
+	parse: (json: unknown) => QuotaGauge[] | undefined
+}
+
+/**
+ * Gauge layout per provider, in render order. Every gauge gets its own healthy
+ * baseline so the windows read as separate instruments, and at each shared
+ * label the two providers differ (GLM 5h blue vs OpenCode Go 5h teal, GLM 7d
+ * purple vs Go 7d blue) so switching plans looks like a different instrument
+ * set. Alarm colors (warning ≥70%, error ≥90%) always win over distinctiveness.
+ */
+const GLM_GAUGES: readonly QuotaSpec[] = [
+	{ label: "⏳5h", baseline: "mdLink" },
+	{ label: "⏳7d", baseline: "thinkingHigh" },
+]
+
+/** OpenCode Go windows: rolling 5h, weekly, monthly (billing anniversary). */
+const GO_GAUGES: readonly QuotaSpec[] = [
+	{ label: "⏳5h", baseline: "accent" },
+	{ label: "⏳7d", baseline: "mdLink" },
+	{ label: "⏳30d", baseline: "thinkingHigh" },
+]
+
+/** GLM quota endpoint — same credential as chat, different host than the gateway. */
+const GLM_QUOTA_URL = "https://open.bigmodel.cn/api/monitor/usage/quota/limit"
+
+/** OpenCode Go usage endpoint — Bearer-authenticated with the key's own API key. */
+const GO_QUOTA_URL = "https://opencode.ai/zen/go/v1/usage"
+
+/** Poll cadence; also the snapshot age that triggers a lazy re-poll. */
+const QUOTA_POLL_MS = 5 * 60_000
+
+/** Snapshots older than this render dim (possibly inaccurate, e.g. offline). */
+const QUOTA_DIM_MS = 10 * 60_000
+
+/** Quota fetch timeout. */
+const QUOTA_TIMEOUT_MS = 10_000
+
+/** Extract one GLM window (by unit) from the quota limits array. */
+function toGlmWindow(
 	limits: Array<Record<string, unknown>>,
 	unit: number,
-): PlanWindow | undefined {
+): { usedPercent: number; resetAt?: number } | undefined {
 	for (const limit of limits) {
 		if (!limit || typeof limit !== "object") continue
 		const pct = limit.percentage
@@ -177,20 +215,62 @@ function toPlanWindow(
 }
 
 /**
- * Extract both windows from the quota response. Verified live 2026-08-28 —
- * entries look like
+ * GLM quota response → gauges (unit 3 = 5h window, unit 6 = weekly). Verified
+ * live 2026-08-28 — entries look like
  * `{ type: "CREDIT_LIMIT", unit: 3, number: 5, percentage: 17, nextResetTime: 1788012323908 }`
- * (`unit: 3` is the 5h window, `unit: 6` the weekly; `type` is "CREDIT_LIMIT", not
- * "TOKENS_LIMIT" as some older parsers assumed).
+ * (`type` is "CREDIT_LIMIT", not "TOKENS_LIMIT" as some older parsers assumed).
  */
-function parsePlanWindows(json: unknown): PlanWindows | undefined {
+export function parseGlmQuotas(json: unknown): QuotaGauge[] | undefined {
 	const limits = (json as { data?: { limits?: Array<Record<string, unknown>> } } | null)?.data
 		?.limits
 	if (!Array.isArray(limits)) return undefined
-	const fiveHour = toPlanWindow(limits, 3)
-	const weekly = toPlanWindow(limits, 6)
-	if (!fiveHour && !weekly) return undefined
-	return { fiveHour, weekly, capturedAt: Date.now() }
+	const units = [3, 6]
+	const gauges: QuotaGauge[] = []
+	for (let i = 0; i < GLM_GAUGES.length; i++) {
+		const window = toGlmWindow(limits, units[i])
+		if (window) gauges.push({ ...GLM_GAUGES[i], ...window })
+	}
+	return gauges.length ? gauges : undefined
+}
+
+/**
+ * OpenCode Go usage response → gauges (rolling 5h / weekly / monthly).
+ * Verified live 2026-09-23 —
+ * `{ usage: { rolling: { status: "ok", percent: 4, resetsAt: "…Z" }, weekly: …, monthly: … } }`.
+ * Each window is parsed defensively (the endpoint reshaped its response within
+ * an hour of launch, cc-switch#6433): windows without `status: "ok"` or a
+ * numeric `percent` are skipped. At 0% the upstream `resetsAt` is a
+ * now-plus-window placeholder rather than a real reset, so the countdown is
+ * dropped in that case (same finding, verified against a live key).
+ */
+export function parseGoQuotas(json: unknown): QuotaGauge[] | undefined {
+	const usage = (json as { usage?: Record<string, unknown> } | null)?.usage
+	if (!usage || typeof usage !== "object") return undefined
+	const windows = ["rolling", "weekly", "monthly"]
+	const gauges: QuotaGauge[] = []
+	for (let i = 0; i < GO_GAUGES.length; i++) {
+		const w = usage[windows[i]]
+		if (!w || typeof w !== "object") continue
+		const { status, percent, resetsAt } = w as {
+			status?: unknown
+			percent?: unknown
+			resetsAt?: unknown
+		}
+		if (status !== "ok" || typeof percent !== "number") continue
+		let resetAt: number | undefined
+		if (percent > 0 && typeof resetsAt === "string") {
+			const ms = Date.parse(resetsAt)
+			if (Number.isFinite(ms)) resetAt = ms
+		}
+		gauges.push({ ...GO_GAUGES[i], usedPercent: percent, resetAt })
+	}
+	return gauges.length ? gauges : undefined
+}
+
+/** Registered coding-plan quota sources, by pi provider id. */
+const QUOTA_SOURCES: Record<string, QuotaSource> = {
+	"zai-coding-cn": { url: GLM_QUOTA_URL, parse: parseGlmQuotas },
+	"opencode-go": { url: GO_QUOTA_URL, parse: parseGoQuotas },
 }
 
 /** Countdown to a reset instant: "2h15m", "3d4h", "now". */
@@ -204,42 +284,29 @@ function formatCountdown(resetAt: number, now: number): string {
 	return hours >= 1 ? `${hours}h${minutes}m` : `${minutes}m`
 }
 
-/** One full-width quota bar: prefix label + 20-cell bar (5% per cell) + reset countdown. */
-function quotaBar(
-	label: string,
-	w: PlanWindow | undefined,
-	baseline: ThemeColor,
-	stale: boolean,
-	now: number,
-	theme: Theme,
-): string {
-	if (!w) return ""
-	const pct = Math.max(0, Math.min(100, Math.round(w.usedPercent)))
+/** One full-width quota gauge: label + used percent + 20-cell bar + reset countdown. */
+function quotaBar(g: QuotaGauge, stale: boolean, now: number, theme: Theme): string {
+	const pct = Math.max(0, Math.min(100, Math.round(g.usedPercent)))
 	// 20 cells (5% each), ceil: any nonzero usage must light ≥1 cell (a few
 	// percent would round to zero and look untouched; for a quota bar
 	// over-reporting is the safe direction — it warns slightly early).
 	const filled = Math.ceil((pct / 100) * 20)
 	const bar = "█".repeat(filled) + "░".repeat(20 - filled)
-	const countdown = w.resetAt !== undefined ? ` ↻${formatCountdown(w.resetAt, now)}` : ""
-	if (stale) return theme.fg("dim", `${label} ${pct}% ${bar}${countdown}`)
-	const color = pct >= 90 ? "error" : pct >= 70 ? "warning" : baseline
-	return theme.fg(color, `${label} ${pct}% ${bar}`) + (countdown ? theme.fg("dim", countdown) : "")
+	const countdown = g.resetAt !== undefined ? ` ↻${formatCountdown(g.resetAt, now)}` : ""
+	if (stale) return theme.fg("dim", `${g.label} ${pct}% ${bar}${countdown}`)
+	const color = pct >= 90 ? "error" : pct >= 70 ? "warning" : g.baseline
+	return (
+		theme.fg(color, `${g.label} ${pct}% ${bar}`) + (countdown ? theme.fg("dim", countdown) : "")
+	)
 }
 
 /**
- * "⏳5h 42% █████████░░░░░░░░ ↻2h15m  ⏳7d 92% ███████████████████░ ↻3d": two independent
- * 20-cell bars (5% per cell). Healthy-state baselines differ (5h = mdLink blue,
- * 7d = thinkingHigh purple) so they read as separate gauges; warning ≥70%, error
- * ≥90% — alarm colors win over distinctiveness when a window runs low. A shared
- * snapshot means both turn dim together when stale; each reset countdown is dim.
+ * All gauges of one snapshot as strings, in render order. A shared snapshot
+ * means all turn dim together when stale; each reset countdown is dim.
  */
-function planSegment(ws: PlanWindows, now: number, theme: Theme): string {
-	const stale = now - ws.capturedAt > PLAN_DIM_MS
-	const parts = [
-		quotaBar("⏳5h", ws.fiveHour, "mdLink", stale, now, theme),
-		quotaBar("⏳7d", ws.weekly, "thinkingHigh", stale, now, theme),
-	].filter(Boolean)
-	return parts.join(" ")
+function quotaBars(snapshot: QuotaSnapshot, now: number, theme: Theme): string[] {
+	const stale = now - snapshot.capturedAt > QUOTA_DIM_MS
+	return snapshot.gauges.map((g) => quotaBar(g, stale, now, theme))
 }
 
 export default function (pi: ExtensionAPI) {
@@ -249,53 +316,56 @@ export default function (pi: ExtensionAPI) {
 	// extension lifetime and only forwards to the current footer.
 	let requestFooterRender: (() => void) | null = null
 
-	// GLM coding plan 5h-window state: latest snapshot, resolved credential,
-	// single in-flight guard, and the 5-minute refresh timer (session-scoped).
-	let planWindow: PlanWindows | undefined
-	let planKey: string | undefined
-	let planInFlight = false
-	let planTimer: ReturnType<typeof setInterval> | undefined
+	// Coding-plan quota state: latest snapshot, per-provider resolved
+	// credentials, single in-flight guard, and the 5-minute refresh timer
+	// (session-scoped).
+	let quota: QuotaSnapshot | undefined
+	const quotaKeys: Record<string, string | undefined> = {}
+	let quotaInFlight = false
+	let quotaTimer: ReturnType<typeof setInterval> | undefined
 
-	const planActive = (ctx: ExtensionContext): boolean => ctx.model?.provider === PLAN_PROVIDER
-
-	// Poll the bigmodel.cn quota endpoint. Best-effort: failures keep the last
-	// snapshot (which then renders dim). The key resolves through pi's auth
-	// system (getProviderAuth) and is retried while absent, so /login
+	// Poll the active provider's quota endpoint. Best-effort: failures keep the
+	// last snapshot (which then renders dim). Keys resolve through pi's auth
+	// system (getProviderAuth) and are retried while absent, so /login
 	// mid-session is picked up without a restart.
-	const pollPlan = async (ctx: ExtensionContext): Promise<void> => {
-		if (planInFlight || !planActive(ctx)) return
-		planInFlight = true
+	const pollQuota = async (ctx: ExtensionContext): Promise<void> => {
+		const provider = ctx.model?.provider ?? ""
+		const source = QUOTA_SOURCES[provider]
+		if (!source || quotaInFlight) return
+		quotaInFlight = true
 		try {
-			planKey ||= (await ctx.modelRegistry.getApiKeyForProvider(PLAN_PROVIDER)) || undefined
-			if (!planKey) return
-			const res = await fetch(PLAN_QUOTA_URL, {
-				headers: { Authorization: `Bearer ${planKey}` },
-				signal: AbortSignal.timeout(PLAN_TIMEOUT_MS),
+			quotaKeys[provider] ||= (await ctx.modelRegistry.getApiKeyForProvider(provider)) || undefined
+			const key = quotaKeys[provider]
+			if (!key) return
+			const res = await fetch(source.url, {
+				headers: { Authorization: `Bearer ${key}` },
+				signal: AbortSignal.timeout(QUOTA_TIMEOUT_MS),
 			})
 			if (!res.ok) return
-			const next = parsePlanWindows(await res.json())
-			if (next) {
-				planWindow = next
+			const gauges = source.parse(await res.json())
+			if (gauges) {
+				quota = { provider, gauges, capturedAt: Date.now() }
 				requestFooterRender?.()
 			}
 		} catch {
 			// Network/parse errors: keep rendering the previous snapshot.
 		} finally {
-			planInFlight = false
+			quotaInFlight = false
 		}
 	}
 
 	/** Lazy refresh hook, cheap enough for every render frame. */
-	const maybePollPlan = (ctx: ExtensionContext): void => {
-		if (!planActive(ctx)) return
-		if (planWindow && Date.now() - planWindow.capturedAt < PLAN_POLL_MS) return
-		void pollPlan(ctx)
+	const maybePollQuota = (ctx: ExtensionContext): void => {
+		const provider = ctx.model?.provider ?? ""
+		if (!QUOTA_SOURCES[provider]) return
+		if (quota?.provider === provider && Date.now() - quota.capturedAt < QUOTA_POLL_MS) return
+		void pollQuota(ctx)
 	}
 
-	const stopPlanTimer = (): void => {
-		if (planTimer) {
-			clearInterval(planTimer)
-			planTimer = undefined
+	const stopQuotaTimer = (): void => {
+		if (quotaTimer) {
+			clearInterval(quotaTimer)
+			quotaTimer = undefined
 		}
 	}
 
@@ -310,7 +380,7 @@ export default function (pi: ExtensionAPI) {
 				},
 				invalidate() {},
 				render(width: number): string[] {
-					maybePollPlan(ctx)
+					maybePollQuota(ctx)
 					const cwd = formatCwd(ctx.sessionManager.getCwd())
 					const left = theme.fg("dim", cwd)
 
@@ -337,15 +407,15 @@ export default function (pi: ExtensionAPI) {
 					const modelId = ctx.model?.id ?? "no-model"
 					const modelColor = MODEL_COLORS[provider]
 					const model = modelColor ? theme.fg(modelColor, modelId) : modelId
-					// Plan segment only while the plan provider is active.
-					const plan =
-						ctx.model?.provider === PLAN_PROVIDER && planWindow
-							? planSegment(planWindow, Date.now(), theme)
-							: ""
-					// Narrow terminals drop the plan segment before the model id.
-					const build = (withPlan: boolean): string => {
+					// Quota segment only while a source provider is active; a
+					// snapshot fetched under another provider never renders.
+					const snapshot = quota?.provider === ctx.model?.provider ? quota : undefined
+					const bars = snapshot ? quotaBars(snapshot, Date.now(), theme) : []
+					// Narrow terminals drop gauges from the last (slowest) window
+					// first, then the whole quota segment, before the model id.
+					const build = (barCount: number): string => {
 						const right = [
-							withPlan ? plan : "",
+							bars.slice(0, barCount).join(" "),
 							model + thinking,
 							branch ? theme.fg("dim", ` (${branch})`) : "",
 						]
@@ -354,9 +424,14 @@ export default function (pi: ExtensionAPI) {
 						const pad = " ".repeat(
 							Math.max(1, width - visibleWidth(left) - visibleWidth(context) - visibleWidth(right)),
 						)
-						return truncateToWidth(left + context + pad + right, width)
+						return left + context + pad + right
 					}
-					return [plan && visibleWidth(build(true)) > width ? build(false) : build(true)]
+					for (let n = bars.length; n >= 0; n--) {
+						const line = build(n)
+						if (visibleWidth(line) <= width) return [line]
+					}
+					// Even without the quota segment the line overflows: truncate.
+					return [truncateToWidth(build(0), width)]
 				},
 			}
 		})
@@ -367,28 +442,28 @@ export default function (pi: ExtensionAPI) {
 		requestFooterRender?.()
 	})
 
-	// Re-render on model switch and prime the plan segment when switching to
-	// the plan provider (it reads ctx.model at render time).
+	// Re-render on model switch and prime the quota segment when switching to
+	// a source provider (it reads ctx.model at render time).
 	pi.on("model_select", async (_event, ctx) => {
 		requestFooterRender?.()
-		maybePollPlan(ctx)
+		maybePollQuota(ctx)
 	})
 
 	// Re-apply on startup and after session switches/reloads with a fresh ctx.
-	// Plan state resets with the session; the timer runs while a UI is
-	// attached (the segment is footer-only) and ticks pollPlan, which no-ops
-	// while another provider is active.
+	// Quota state resets with the session; the timer runs while a UI is
+	// attached (the segment is footer-only) and ticks pollQuota, which no-ops
+	// while a non-source provider is active.
 	pi.on("session_start", async (_event, ctx) => {
-		planWindow = undefined
-		planKey = undefined
-		stopPlanTimer()
+		quota = undefined
+		for (const k of Object.keys(quotaKeys)) delete quotaKeys[k]
+		stopQuotaTimer()
 		if (enabled && ctx.hasUI) {
 			apply(ctx)
-			planTimer = setInterval(() => void pollPlan(ctx), PLAN_POLL_MS)
+			quotaTimer = setInterval(() => void pollQuota(ctx), QUOTA_POLL_MS)
 		}
 	})
 
 	pi.on("session_shutdown", async () => {
-		stopPlanTimer()
+		stopQuotaTimer()
 	})
 }

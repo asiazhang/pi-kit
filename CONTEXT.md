@@ -9,7 +9,7 @@ pi 编码代理的扩展工具包（provider 注册 + 状态栏 + 系统提示�
 _Avoid_: token 百分比、memory 占用
 
 **Coding plan**:
-按配额窗口计费的 LLM 订阅计划（区别于按 token 计量），当前指 GLM coding plan（pi provider `zai-coding-cn`）。
+按配额窗口计费的 LLM 订阅计划（区别于按 token 计量），当前指 GLM coding plan（pi provider `zai-coding-cn`）与 OpenCode Go（pi provider `opencode-go`，额度以美元计量）。
 _Avoid_: 套餐、credits
 
 **配额窗口 (Quota window)**:
@@ -23,6 +23,10 @@ _Avoid_: 5 小时限额
 **7 天窗口 (7 day window)**:
 coding plan 的周配额窗口，自订购起以 7 天为周期刷新；是全周的硬上限，5h 窗口耗尽、重置后它才成为真正的约束。footer 以 ⏳7d 展示。
 _Avoid_: 周窗口、每周窗口
+
+**30 天窗口 (Monthly window)**:
+coding plan 的月配额窗口，自订购日起以月为周期刷新；是三档窗口中额度最大（即最松）的一档，当前为 OpenCode Go 独有。footer 以 ⏳30d 展示。
+_Avoid_: 月窗口、月限额
 
 **窗口重置 (Window reset)**:
 配额窗口重置、配额恢复的时刻；footer 以 ↻ 倒计时展示。

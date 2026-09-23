@@ -64,8 +64,21 @@ const MODEL_COLORS = {
 	"zai-coding-cn": "thinkingXhigh",
 }
 
-/** Mirror of PLAN_DIM_MS in extensions/tc-footer.ts — keep in sync. */
-const PLAN_DIM_MS = 10 * 60_000
+/** Mirror of GLM_GAUGES in extensions/tc-footer.ts — keep in sync. */
+const GLM_GAUGES = [
+	{ label: "⏳5h", baseline: "mdLink" },
+	{ label: "⏳7d", baseline: "thinkingHigh" },
+]
+
+/** Mirror of GO_GAUGES in extensions/tc-footer.ts — keep in sync. */
+const GO_GAUGES = [
+	{ label: "⏳5h", baseline: "accent" },
+	{ label: "⏳7d", baseline: "mdLink" },
+	{ label: "⏳30d", baseline: "thinkingHigh" },
+]
+
+/** Mirror of QUOTA_DIM_MS in extensions/tc-footer.ts — keep in sync. */
+const QUOTA_DIM_MS = 10 * 60_000
 
 /** Mirror of formatCountdown() in extensions/tc-footer.ts — keep in sync. */
 function formatCountdown(resetAt, now) {
@@ -79,28 +92,25 @@ function formatCountdown(resetAt, now) {
 }
 
 /** Mirror of quotaBar() in extensions/tc-footer.ts — keep in sync. */
-function quotaBar(label, w, baseline, stale, now) {
-	if (!w) return ""
-	const pct = Math.max(0, Math.min(100, Math.round(w.usedPercent)))
+function quotaBar(g, stale, now) {
+	const pct = Math.max(0, Math.min(100, Math.round(g.usedPercent)))
 	// 20 cells (5% each), ceil: any nonzero usage must light ≥1 cell (a few
 	// percent would round to zero and look untouched; for a quota bar
 	// over-reporting is the safe direction — it warns slightly early).
 	const filled = Math.ceil((pct / 100) * 20)
 	const bar = "█".repeat(filled) + "░".repeat(20 - filled)
-	const countdown = w.resetAt !== undefined ? ` ↻${formatCountdown(w.resetAt, now)}` : ""
-	if (stale) return theme.fg("dim", `${label} ${pct}% ${bar}${countdown}`)
-	const color = pct >= 90 ? "error" : pct >= 70 ? "warning" : baseline
-	return theme.fg(color, `${label} ${pct}% ${bar}`) + (countdown ? theme.fg("dim", countdown) : "")
+	const countdown = g.resetAt !== undefined ? ` ↻${formatCountdown(g.resetAt, now)}` : ""
+	if (stale) return theme.fg("dim", `${g.label} ${pct}% ${bar}${countdown}`)
+	const color = pct >= 90 ? "error" : pct >= 70 ? "warning" : g.baseline
+	return (
+		theme.fg(color, `${g.label} ${pct}% ${bar}`) + (countdown ? theme.fg("dim", countdown) : "")
+	)
 }
 
-/** Mirror of planSegment() in extensions/tc-footer.ts — keep in sync. */
-function planSegment(ws, now) {
-	const stale = now - ws.capturedAt > PLAN_DIM_MS
-	const parts = [
-		quotaBar("⏳5h", ws.fiveHour, "mdLink", stale, now),
-		quotaBar("⏳7d", ws.weekly, "thinkingHigh", stale, now),
-	].filter(Boolean)
-	return parts.join(" ")
+/** Mirror of quotaBars() in extensions/tc-footer.ts — keep in sync. */
+function quotaBars(snapshot, now) {
+	const stale = now - snapshot.capturedAt > QUOTA_DIM_MS
+	return snapshot.gauges.map((g) => quotaBar(g, stale, now))
 }
 
 /** Mirror of render() in extensions/tc-footer.ts — keep in sync. */
@@ -111,7 +121,7 @@ function renderLine(
 	model,
 	thinking,
 	branch,
-	planWindow,
+	snapshot,
 	width,
 	provider = "",
 ) {
@@ -130,33 +140,57 @@ function renderLine(
 	const think = thinking ? ` ${theme.fg("accent", `⚡${thinking}`)}` : ""
 	const modelColor = MODEL_COLORS[provider]
 	const modelPart = modelColor ? theme.fg(modelColor, model) : model
-	const plan = planWindow ? planSegment(planWindow, Date.now()) : ""
+	const bars = snapshot ? quotaBars(snapshot, Date.now()) : []
 	const branchPart = branch ? theme.fg("dim", ` (${branch})`) : ""
-	// Narrow terminals drop the plan segment before the model id.
-	const build = (withPlan) => {
-		const right = [withPlan ? plan : "", modelPart + think, branchPart].filter(Boolean).join(" ")
+	// Narrow terminals drop gauges from the last (slowest) window first, then
+	// the whole quota segment, before the model id.
+	const build = (barCount) => {
+		const right = [bars.slice(0, barCount).join(" "), modelPart + think, branchPart]
+			.filter(Boolean)
+			.join(" ")
 		const pad = " ".repeat(
 			Math.max(1, width - visibleWidth(left) - visibleWidth(context) - visibleWidth(right)),
 		)
-		return truncateToWidth(left + context + pad + right, width)
+		return left + context + pad + right
 	}
-	return plan && visibleWidth(build(true)) > width ? build(false) : build(true)
+	for (let n = bars.length; n >= 0; n--) {
+		const line = build(n)
+		if (visibleWidth(line) <= width) return line
+	}
+	// Even without the quota segment the line overflows: truncate.
+	return truncateToWidth(build(0), width)
 }
 
-const width = Number(process.argv[2]) || 80
+// Default width200: the quota segment needs ~145–190 cols to fit whole
+// (GLM dual window ~145, OpenCode Go trio ~190 with this cwd/model/branch).
+const width = Number(process.argv[2]) || 200
 const cwd = process.cwd()
 
-// Plan-window mock: 5h + 7d windows (usedPercent, reset+ageMin for the 5h, weeklyPct/resetMs for the 7d).
+// GLM dual-window mock: 5h + 7d gauges (usedPercent, reset+ageMin for the 5h, weeklyPct/resetMs for the 7d).
 const plan = (fiveHourPct, ageMin = 0, weeklyPct = null) => {
-	const ws = {
+	const snapshot = {
 		capturedAt: Date.now() - ageMin * 60_000,
-		fiveHour: { usedPercent: fiveHourPct, resetAt: Date.now() + 135 * 60_000 },
+		gauges: [{ ...GLM_GAUGES[0], usedPercent: fiveHourPct, resetAt: Date.now() + 135 * 60_000 }],
 	}
 	if (weeklyPct !== null) {
-		ws.weekly = { usedPercent: weeklyPct, resetAt: Date.now() + 3 * 86_400_000 }
+		snapshot.gauges.push({
+			...GLM_GAUGES[1],
+			usedPercent: weeklyPct,
+			resetAt: Date.now() + 3 * 86_400_000,
+		})
 	}
-	return ws
+	return snapshot
 }
+
+// OpenCode Go trio mock: rolling 5h + weekly + monthly gauges.
+const go = (rollingPct, ageMin = 0, weeklyPct = 12, monthlyPct = 34) => ({
+	capturedAt: Date.now() - ageMin * 60_000,
+	gauges: [
+		{ ...GO_GAUGES[0], usedPercent: rollingPct, resetAt: Date.now() + 85 * 60_000 },
+		{ ...GO_GAUGES[1], usedPercent: weeklyPct, resetAt: Date.now() + 3 * 86_400_000 },
+		{ ...GO_GAUGES[2], usedPercent: monthlyPct, resetAt: Date.now() + 19 * 86_400_000 },
+	],
+})
 
 // [label, tokens, contextWindow, model, thinking, branch, planWindow, provider]
 const cases = [
@@ -292,7 +326,7 @@ const cases = [
 		"zai-coding-cn",
 	],
 	[
-		"tencent-copilot model id in accent teal (no plan segment)",
+		"tencent-copilot model id in accent teal (no quota segment)",
 		30_000,
 		131_072,
 		"hunyuan-t1-latest",
@@ -301,16 +335,76 @@ const cases = [
 		null,
 		"tencent-copilot",
 	],
+	[
+		"OpenCode Go trio 4% / 3% / 1% (teal + blue + purple healthy)",
+		30_000,
+		131_072,
+		"mimo-v2.6-flash",
+		"high",
+		"main",
+		go(4, 0, 3, 1),
+		"opencode-go",
+	],
+	[
+		"OpenCode Go 5h 72% + monthly 75% (teal/purple → yellow warnings)",
+		30_000,
+		131_072,
+		"mimo-v2.6-flash",
+		"high",
+		"main",
+		go(72, 0, 40, 75),
+		"opencode-go",
+	],
+	[
+		"OpenCode Go quota stale >10min (whole segment dim)",
+		30_000,
+		131_072,
+		"mimo-v2.6-flash",
+		"high",
+		"main",
+		go(42, 15, 30, 20),
+		"opencode-go",
+	],
 ]
 
-for (const [label, tokens, contextWindow, model, thinking, branch, planWindow, provider] of cases) {
+for (const [label, tokens, contextWindow, model, thinking, branch, snapshot, provider] of cases) {
 	console.log(`${label}:`)
 	console.log(
-		renderLine(cwd, tokens, contextWindow, model, thinking, branch, planWindow, width, provider),
+		renderLine(cwd, tokens, contextWindow, model, thinking, branch, snapshot, width, provider),
 	)
 	console.log()
 }
-console.log(`narrow (50 cols) — plan segment dropped before the model id:`)
+console.log(`160 cols — OpenCode Go drops the ⏳30d gauge first:`)
+console.log(
+	renderLine(
+		cwd,
+		30_000,
+		131_072,
+		"mimo-v2.6-flash",
+		"high",
+		"main",
+		go(42, 0, 30, 75),
+		160,
+		"opencode-go",
+	),
+)
+console.log()
+console.log(`200 cols — all three OpenCode Go gauges fit:`)
+console.log(
+	renderLine(
+		cwd,
+		30_000,
+		131_072,
+		"mimo-v2.6-flash",
+		"high",
+		"main",
+		go(42, 0, 30, 75),
+		200,
+		"opencode-go",
+	),
+)
+console.log()
+console.log(`narrow (50 cols) — quota segment dropped before the model id:`)
 console.log(
 	renderLine(cwd, 116_000, 131_072, "glm-5.3", "high", "master", plan(42), 50, "zai-coding-cn"),
 )
