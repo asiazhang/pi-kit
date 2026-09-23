@@ -5,9 +5,9 @@
  *   node scripts/footer-preview.mjs [columns]
  *
  * Renders the exact same logic as extensions/tc-footer.ts (cwd shortening,
- * effective-window percent, dynamic color thresholds, colors) for a few
- * representative states, using the real pi theme (dark by default,
- * PI_THEME to override).
+ * effective-window percent, dynamic color thresholds, colors, token-speed
+ * tiers) for a few representative states, using the real pi theme (dark by
+ * default, PI_THEME to override).
  */
 
 import { isAbsolute, relative, resolve, sep } from "node:path"
@@ -20,7 +20,7 @@ const theme = themeMod.getThemeByName(process.env.PI_THEME || "dark")
 if (!theme) throw new Error(`theme "${process.env.PI_THEME || "dark"}" not found`)
 
 /** Mirror of EFFECTIVE_CONTEXT_TOKENS in extensions/tc-footer.ts — keep in sync. */
-const EFFECTIVE_CONTEXT_TOKENS = 450_000
+const EFFECTIVE_CONTEXT_TOKENS = 650_000
 
 /** Mirror of RESERVE_TOKENS in extensions/tc-footer.ts — keep in sync. */
 const RESERVE_TOKENS = 16_384
@@ -40,7 +40,7 @@ function formatCwd(cwd) {
 /** Mirror of thresholds() in extensions/tc-footer.ts — keep in sync. */
 function thresholds(effectiveWindow) {
 	const capped = effectiveWindow >= EFFECTIVE_CONTEXT_TOKENS
-	const red = capped ? 65 : ((effectiveWindow - RESERVE_TOKENS) / effectiveWindow) * 100
+	const red = capped ? 85 : ((effectiveWindow - RESERVE_TOKENS) / effectiveWindow) * 100
 	return { red, yellow: red / 2 }
 }
 
@@ -64,18 +64,16 @@ const MODEL_COLORS = {
 	"zai-coding-cn": "thinkingXhigh",
 }
 
-/** Mirror of GLM_GAUGES in extensions/tc-footer.ts — keep in sync. */
-const GLM_GAUGES = [
-	{ label: "⏳5h", baseline: "mdLink" },
-	{ label: "⏳7d", baseline: "thinkingHigh" },
-]
+/** Mirror of SPEED_TIERS in extensions/tc-footer.ts — keep in sync. */
+const SPEED_TIERS = { warn: 50, good: 100, top: 200 }
 
-/** Mirror of GO_GAUGES in extensions/tc-footer.ts — keep in sync. */
-const GO_GAUGES = [
-	{ label: "⏳5h", baseline: "accent" },
-	{ label: "⏳7d", baseline: "mdLink" },
-	{ label: "⏳30d", baseline: "thinkingHigh" },
-]
+/** Mirror of speedColor() in extensions/tc-footer.ts — keep in sync. */
+function speedColor(tps) {
+	if (tps >= SPEED_TIERS.top) return "accent"
+	if (tps >= SPEED_TIERS.good) return "success"
+	if (tps >= SPEED_TIERS.warn) return "warning"
+	return "error"
+}
 
 /** Mirror of QUOTA_DIM_MS in extensions/tc-footer.ts — keep in sync. */
 const QUOTA_DIM_MS = 10 * 60_000
@@ -91,8 +89,21 @@ function formatCountdown(resetAt, now) {
 	return hours >= 1 ? `${hours}h${minutes}m` : `${minutes}m`
 }
 
+/** Mirror of GLM_GAUGES in extensions/tc-footer.ts — keep in sync. */
+const GLM_GAUGES = [
+	{ label: "⏳5h", baseline: "mdLink" },
+	{ label: "⏳7d", baseline: "thinkingHigh" },
+]
+
+/** Mirror of GO_GAUGES in extensions/tc-footer.ts — keep in sync. */
+const GO_GAUGES = [
+	{ label: "⏳5h", baseline: "accent" },
+	{ label: "⏳7d", baseline: "mdLink" },
+	{ label: "⏳30d", baseline: "thinkingHigh" },
+]
+
 /** Mirror of quotaBar() in extensions/tc-footer.ts — keep in sync. */
-function quotaBar(g, stale, now) {
+function quotaBar(g, stale, now, paint) {
 	const pct = Math.max(0, Math.min(100, Math.round(g.usedPercent)))
 	// 20 cells (5% each), ceil: any nonzero usage must light ≥1 cell (a few
 	// percent would round to zero and look untouched; for a quota bar
@@ -100,18 +111,29 @@ function quotaBar(g, stale, now) {
 	const filled = Math.ceil((pct / 100) * 20)
 	const bar = "█".repeat(filled) + "░".repeat(20 - filled)
 	const countdown = g.resetAt !== undefined ? ` ↻${formatCountdown(g.resetAt, now)}` : ""
-	if (stale) return theme.fg("dim", `${g.label} ${pct}% ${bar}${countdown}`)
+	if (stale) return paint("dim", `${g.label} ${pct}% ${bar}${countdown}`)
 	const color = pct >= 90 ? "error" : pct >= 70 ? "warning" : g.baseline
-	return (
-		theme.fg(color, `${g.label} ${pct}% ${bar}`) + (countdown ? theme.fg("dim", countdown) : "")
-	)
+	return paint(color, `${g.label} ${pct}% ${bar}`) + (countdown ? paint("dim", countdown) : "")
 }
 
 /** Mirror of quotaBars() in extensions/tc-footer.ts — keep in sync. */
-function quotaBars(snapshot, now) {
+function quotaBars(snapshot, now, paint) {
 	const stale = now - snapshot.capturedAt > QUOTA_DIM_MS
-	return snapshot.gauges.map((g) => quotaBar(g, stale, now))
+	return snapshot.gauges.map((g) => quotaBar(g, stale, now, paint))
 }
+
+/** Mirror of PLAN_ANSI in extensions/tc-footer.ts — keep in sync. */
+const PLAN_ANSI = {
+	accent: "\x1b[38;5;109m",
+	mdLink: "\x1b[38;5;110m",
+	thinkingHigh: "\x1b[38;5;139m",
+	warning: "\x1b[38;5;214m",
+	error: "\x1b[38;5;203m",
+	dim: "\x1b[38;5;245m",
+}
+
+/** Mirror of planAnsi in extensions/tc-footer.ts — keep in sync. */
+const planAnsi = (color, text) => `${PLAN_ANSI[color]}${text}\x1b[0m`
 
 /** Mirror of render() in extensions/tc-footer.ts — keep in sync. */
 function renderLine(
@@ -124,6 +146,7 @@ function renderLine(
 	snapshot,
 	width,
 	provider = "",
+	speedTps = null,
 ) {
 	const left = theme.fg("dim", formatCwd(cwd))
 	let context = ""
@@ -134,18 +157,32 @@ function renderLine(
 		if (pct !== null) {
 			const shown = Math.min(100, Math.round(pct))
 			const color = pct >= th.red ? "error" : pct >= th.yellow ? "warning" : "success"
-			context = ` ${theme.fg(color, `${shown}%`)} ${contextBar(pct, th)}`
+			// Capped windows: label the Smart Zone (mirror of tc-footer.ts).
+			const capNote = contextWindow > EFFECTIVE_CONTEXT_TOKENS ? theme.fg("dim", " Smart Zone") : ""
+			context = ` ${theme.fg(color, `${shown}%`)} ${contextBar(pct, th)}${capNote}`
 		}
 	}
-	const think = thinking ? ` ${theme.fg("accent", `⚡${thinking}`)}` : ""
+	const think = thinking ? ` ${theme.fg("accent", `✦${thinking}`)}` : ""
 	const modelColor = MODEL_COLORS[provider]
 	const modelPart = modelColor ? theme.fg(modelColor, model) : model
-	const bars = snapshot ? quotaBars(snapshot, Date.now()) : []
+	const bars = snapshot
+		? quotaBars(snapshot, Date.now(), (color, text) => theme.fg(color, text))
+		: []
+	// Mirror of the token-speed segment in tc-footer.ts: null until the first
+	// run finishes; the same tiers (速度等级 in CONTEXT.md) color it.
+	const speedSeg =
+		speedTps === null ? "" : ` ${theme.fg(speedColor(speedTps), `⚡${speedTps.toFixed(1)} tok/s`)}`
 	const branchPart = branch ? theme.fg("dim", ` (${branch})`) : ""
-	// Narrow terminals drop gauges from the last (slowest) window first, then
-	// the whole quota segment, before the model id.
-	const build = (barCount) => {
-		const right = [bars.slice(0, barCount).join(" "), modelPart + think, branchPart]
+	// Narrow terminals drop quota gauges (the last, slowest window first) →
+	// the whole quota segment → token speed → branch; the model id and context
+	// bar always survive (mirrors tc-footer.ts).
+	const build = (gaugeCount, keepSpeed, keepBranch) => {
+		const right = [
+			bars.slice(0, gaugeCount).join(" "),
+			keepSpeed ? speedSeg : "",
+			modelPart + think,
+			keepBranch && branchPart ? branchPart : "",
+		]
 			.filter(Boolean)
 			.join(" ")
 		const pad = " ".repeat(
@@ -153,20 +190,26 @@ function renderLine(
 		)
 		return left + context + pad + right
 	}
-	for (let n = bars.length; n >= 0; n--) {
-		const line = build(n)
-		if (visibleWidth(line) <= width) return line
+	const candidates = []
+	for (let n = bars.length; n >= 0; n--) candidates.push([n, true, true])
+	candidates.push([0, false, true], [0, false, false])
+	let chosen = ""
+	for (const [n, keepSpeed, keepBranch] of candidates) {
+		const candidate = build(n, keepSpeed, keepBranch)
+		if (visibleWidth(candidate) <= width) {
+			chosen = candidate
+			break
+		}
 	}
-	// Even without the quota segment the line overflows: truncate.
-	return truncateToWidth(build(0), width)
+	return truncateToWidth(chosen || build(bars.length, true, true), width)
 }
 
-// Default width200: the quota segment needs ~145–190 cols to fit whole
-// (GLM dual window ~145, OpenCode Go trio ~190 with this cwd/model/branch).
-const width = Number(process.argv[2]) || 200
+// Default matches a typical Mac terminal (120 cols); pass columns explicitly
+// to preview narrow layouts.
+const width = Number(process.argv[2]) || 120
 const cwd = process.cwd()
 
-// GLM dual-window mock: 5h + 7d gauges (usedPercent, reset+ageMin for the 5h, weeklyPct/resetMs for the 7d).
+// Quota-window mock: gauges in render order (usedPercent, reset+ageMin for the 5h, weeklyPct/resetMs for the 7d).
 const plan = (fiveHourPct, ageMin = 0, weeklyPct = null) => {
 	const snapshot = {
 		capturedAt: Date.now() - ageMin * 60_000,
@@ -192,10 +235,10 @@ const go = (rollingPct, ageMin = 0, weeklyPct = 12, monthlyPct = 34) => ({
 	],
 })
 
-// [label, tokens, contextWindow, model, thinking, branch, planWindow, provider]
+// [label, tokens, contextWindow, model, thinking, branch, planWindow, provider, speedTps]
 const cases = [
 	[
-		"128k window @ 30k (green)",
+		"128k window @ 30k (green) + speed 42.7 red (dropped when narrow)",
 		30_000,
 		131_072,
 		"hunyuan-t1-latest",
@@ -203,9 +246,10 @@ const cases = [
 		"master",
 		null,
 		"tencent-copilot",
+		42.7,
 	],
 	[
-		"128k window @ 30k + plan 8% (blue, 2 lit cells)",
+		"128k window @ 30k + plan 8% (blue, 2 lit cells) + speed 152.4 green (dropped when narrow)",
 		30_000,
 		131_072,
 		"glm-5.3",
@@ -213,9 +257,10 @@ const cases = [
 		"master",
 		plan(8),
 		"zai-coding-cn",
+		152.4,
 	],
 	[
-		"128k window @ 30k + plan 42% (green + blue)",
+		"128k window @ 30k + plan 42% (green + blue) + speed 280 cyan, near the 300 ceiling (dropped when narrow)",
 		30_000,
 		131_072,
 		"glm-5.3",
@@ -223,6 +268,7 @@ const cases = [
 		"master",
 		plan(42),
 		"zai-coding-cn",
+		280,
 	],
 	[
 		"128k window @ 70k + plan 75% (yellow + yellow)",
@@ -255,7 +301,7 @@ const cases = [
 		"tencent-copilot",
 	],
 	[
-		"1M window @ 200k (yellow — red is 65% of effective window)",
+		"1M window @ 200k (green — well inside the Smart Zone)",
 		200_000,
 		1_048_576,
 		"gpt-5",
@@ -265,7 +311,7 @@ const cases = [
 		"anthropic",
 	],
 	[
-		"1M window @ 300k (yellow — red is 65% of effective window)",
+		"1M window @ 300k (yellow — 46% of the Smart Zone, past the 42.5% yellow line)",
 		300_000,
 		1_048_576,
 		"gpt-5",
@@ -275,8 +321,8 @@ const cases = [
 		"openai",
 	],
 	[
-		"1M window @ 440k (red — effective window nearly full)",
-		440_000,
+		"1M window @ 600k (red — 92% of the Smart Zone, past the 85% red line)",
+		600_000,
 		1_048_576,
 		"gpt-5",
 		"high",
@@ -336,7 +382,7 @@ const cases = [
 		"tencent-copilot",
 	],
 	[
-		"OpenCode Go trio 4% / 3% / 1% (teal + blue + purple healthy)",
+		"OpenCode Go 4% / 3% / 1% (teal + blue + purple; ⏳7d/⏳30d dropped when narrow)",
 		30_000,
 		131_072,
 		"mimo-v2.6-flash",
@@ -346,7 +392,7 @@ const cases = [
 		"opencode-go",
 	],
 	[
-		"OpenCode Go 5h 72% + monthly 75% (teal/purple → yellow warnings)",
+		"OpenCode Go 5h 72% + monthly 75% (warnings override the baselines)",
 		30_000,
 		131_072,
 		"mimo-v2.6-flash",
@@ -367,13 +413,89 @@ const cases = [
 	],
 ]
 
-for (const [label, tokens, contextWindow, model, thinking, branch, snapshot, provider] of cases) {
+for (const [
+	label,
+	tokens,
+	contextWindow,
+	model,
+	thinking,
+	branch,
+	snapshot,
+	provider,
+	speedTps,
+] of cases) {
 	console.log(`${label}:`)
 	console.log(
-		renderLine(cwd, tokens, contextWindow, model, thinking, branch, snapshot, width, provider),
+		renderLine(
+			cwd,
+			tokens,
+			contextWindow,
+			model,
+			thinking,
+			branch,
+			snapshot,
+			width,
+			provider,
+			speedTps ?? null,
+		),
 	)
 	console.log()
 }
+// The tier ladder runs at ≥110 cols so the speed segment survives the long
+// preview cwd; the requested width still governs everything else.
+const ladderWidth = Math.max(width, 110)
+console.log(
+	`speed tiers at ${ladderWidth} cols (anchor: 300 tok/s ceiling) — red <50, yellow 50–100, green 100–200, cyan ≥200:`,
+)
+for (const tps of [42.7, 75, 152.4, 280]) {
+	console.log(
+		renderLine(
+			cwd,
+			30_000,
+			131_072,
+			"deepseek-v4.1-flash-ioa",
+			"high",
+			"master",
+			null,
+			ladderWidth,
+			"tencent-copilot",
+			tps,
+		),
+	)
+}
+console.log()
+console.log(`narrow (100 cols) — plan segment dropped before the token speed:`)
+console.log(
+	renderLine(
+		cwd,
+		116_000,
+		131_072,
+		"glm-5.3",
+		"high",
+		"master",
+		plan(42),
+		100,
+		"zai-coding-cn",
+		152.4,
+	),
+)
+console.log()
+console.log(`narrower (80 cols) — token speed dropped before the branch:`)
+console.log(
+	renderLine(
+		cwd,
+		116_000,
+		131_072,
+		"glm-5.3",
+		"high",
+		"master",
+		plan(42),
+		80,
+		"zai-coding-cn",
+		152.4,
+	),
+)
+console.log()
 console.log(`160 cols — OpenCode Go drops the ⏳30d gauge first:`)
 console.log(
 	renderLine(
@@ -403,8 +525,21 @@ console.log(
 		"opencode-go",
 	),
 )
+
+// pi-web status shelf: same segment, ANSI colors (the web theme is a no-op stub).
 console.log()
-console.log(`narrow (50 cols) — quota segment dropped before the model id:`)
+console.log(`pi-web extension-status shelf (quota segment only, ANSI):`)
+for (const [label, ws] of [
+	["5h 42% + weekly 30%", plan(42, 0, 30)],
+	["5h 8% + weekly 85%", plan(8, 0, 85)],
+	["5h 95% (red)", plan(95, 0, 92)],
+	["stale >10min (dim)", plan(42, 15)],
+	["OpenCode Go trio 42 / 30 / 75", go(42, 0, 30, 75)],
+]) {
+	console.log(`${label}:`)
+	console.log(quotaBars(ws, Date.now(), planAnsi).join(" "))
+}
+console.log()
 console.log(
-	renderLine(cwd, 116_000, 131_072, "glm-5.3", "high", "master", plan(42), 50, "zai-coding-cn"),
+	`pi-web clear (non-plan provider / no snapshot): setStatus(${JSON.stringify("coding-plan")}, undefined)`,
 )

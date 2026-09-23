@@ -5,6 +5,45 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.11.1] - 2026-09-22
+
+### Fixed
+
+- **tc-footer**：⚡ tok/s 流式刷新节流 250ms → 1s——刷新节奏与 1s 滑动窗口对齐，每次刷新读到一整个新窗口，数字不再高频跳动
+
+## [0.11.0] - 2026-09-22
+
+### Added
+
+- **tc-footer**：实时 token 速度段 `⚡42.3 tok/s`——一个 agent run（`agent_start`→`agent_end`）内以 1s 滑动窗口测 tok/s，工具执行期间暂停计时；`text_delta`/`thinking_delta` 按词边界正则估算 token，`message_end` 用 provider `usage.output` 校准总数，因此结束后定格的整轮平均是精确值。按速度等级着色（`<50` error / `50–100` warning / `100–200` success / `≥200` accent，满速锚点 300 tok/s），流式期间 250ms 节流刷新 + 尾部补刷；参考 [pi-token-speed](https://github.com/gsanhueza/pi-token-speed) 实现。术语定义见 `CONTEXT.md`
+
+### Changed
+
+- **tc-footer**：思考等级图标 ⚡ → ✦（⚡ 归 token 速度段专用，见 `CONTEXT.md` 词条）；窄终端截断顺序明确为 plan → token 速度 → 分支名，模型 id 与上下文进度条始终优先（顺带修复原实现先截断后比较、plan 段实际永远不会被丢弃的问题）
+- **preview**：`npm run footer-preview` 默认列宽 80 → 120（Mac 终端常见宽度），并新增速度四档与丢段顺序的演示
+
+## [0.10.0] - 2026-09-14
+
+### Added
+
+- **tc-footer**：上下文进度条在标称窗口超过 650k 上限时追加 dim 色 `Smart Zone` 标签——百分比与进度条以截断后的有效上下文窗口为分母，标签明示这一点，避免“1M 模型的 67%”被误读为标称窗口占比；未截断的窗口不加标注。术语定义见 `CONTEXT.md`
+- **docs**：新增有效上下文窗口调研报告 `docs/research/effective-context-window.md`（一手来源：Chroma context rot、RULER、NoLiMa、LangWatch 真实 trace、pi 与 Claude Code 源码对照）
+
+### Changed
+
+- **tc-footer**：Smart Zone 上限 450k → 650k，截断窗口红线 65% → 85%（≈552.5k，仍早于 pi 真实 compaction 点 98.4%）——300–450k 区间（生产实践验证可用：Claude Code 1M 会话 96.7% 才压缩）不再误标红；阈值依据见调研报告
+
+## [0.9.0] - 2026-09-10
+
+### Added
+
+- **tc-footer**：pi-web 等没有 footer 的界面（RPC 模式下 `setFooter` 是 no-op）也能看到 coding plan 配额窗口——同一段 5h + 7d 窗口改由扩展状态栏（`setStatus("coding-plan")`）展示，切走 `zai-coding-cn` 即清除；终端 footer 的配色来自 theme，网页端改用 ANSI（RPC 的扩展 theme 是 no-op stub，`fg()` 原样返回文本），已发布文本做缓存避免重复推送。决策记录见 `docs/adr/0002-pi-web-plan-status.md`
+- **extension**：新增 `deepseek-v4.1-flash-ioa`（DeepSeek V4.1 Flash）模型条目：支持图片输入（实测能读出图片内容）、1M 上下文、384K 输出，思考档位沿用 `all`
+
+### Changed
+
+- **extension**：`deepseek-v4-flash-ioa` 替换为 `deepseek-v4.1-flash-ioa`——新 ID 是 V4.1 的显式入口（旧 ID 为上游已弃用名，请求会被路由到 V4.1-Flash）；旧 ID 在网关上仍可用，但已从目录移除，固定过它的配置需改用新 ID。DeepSeek 两个条目的输出上限 50000 → 384000，模型快照复核日期更新为 2026-09-10
+
 ## [0.8.0] - 2026-09-03
 
 ### Added

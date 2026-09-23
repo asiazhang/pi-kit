@@ -4,7 +4,7 @@
 
 另附带几个 provider 无关的扩展（默认启用，随包一起加载）：
 
-- **自定义状态栏**（`tc-footer`）：单行显示工作目录、上下文用量百分比与进度条、coding plan 配额窗口（GLM `zai-coding-cn` 显示 `⏳5h` + `⏳7d`，OpenCode Go `opencode-go` 显示 `⏳5h` + `⏳7d` + `⏳30d`；各窗口基线色互不相同，仅在对应 provider 活动且已存 key 时显示，数据超过 10 分钟转暗）、模型 id、思考等级（⚡）、git 分支。
+- **自定义状态栏**（`tc-footer`）：单行显示工作目录、上下文用量百分比与进度条、coding plan 配额窗口（GLM `zai-coding-cn` 显示 `⏳5h` + `⏳7d`，OpenCode Go `opencode-go` 显示 `⏳5h` + `⏳7d` + `⏳30d`；各窗口基线色互不相同，便于一眼区分是哪个 plan，20 格、warning≥70% / error≥90%，仅在对应 provider 活动且已存 key 时显示，超过 10 分钟转暗）、实时 token 速度（`⚡42.3 tok/s`，按速度等级着色：`<50` 红 / `50–100` 黄 / `100–200` 绿 / `≥200` 青，满速锚点 300 tok/s；工具执行期间暂停计时，一轮结束后定格整轮平均）、模型 id、思考等级（✦）、git 分支。pi-web 等无 footer 的界面会在扩展状态栏（`setStatus("coding-plan")`）中显示同一段配额窗口。
 - **系统提示词注入**（`system-prompt`）：每轮向系统提示词追加用户偏好（bash 搜索使用 `rg`，尊重 .gitignore）。
 - **Warp 终端通知**（`warp-notify`）：仅在 Warp 终端内激活，会话开始、提交提示词、等待提问回答、回答结束、空闲时弹系统通知，turn 进行中在 tab 标题显示进行中动画；子会话（SubAgent）不会误触发通知。非 Warp 环境无任何行为。
 
@@ -79,7 +79,7 @@ pi --model tencent-copilot/glm-5.3-ioa
 | `minimax-m3-ioa` | MiniMax M3 |
 | `kimi-k3-ioa` | Kimi K3 |
 | `hy3-ioa` | Hy3 |
-| `deepseek-v4-flash-ioa` / `deepseek-v4-pro-ioa` | DeepSeek V4 Flash / Pro |
+| `deepseek-v4.1-flash-ioa` / `deepseek-v4-pro-ioa` | DeepSeek V4.1 Flash / Pro |
 
 ## 网关兼容性说明
 
