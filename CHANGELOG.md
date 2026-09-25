@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.14.3] - 2026-09-25
+
+### Fixed
+
+- **tc-footer**：tok/s 刷新节拍从 1s 收紧为 250ms（`SPEED_THROTTLE_MS`）——1s 节拍下读数滞后最大可达一秒，速度变化快时显示误差明显；250ms 更跟手，滑动窗口仍读完整一秒，平滑度不变
+
 ## [0.14.2] - 2026-09-23
 
 ### Fixed
