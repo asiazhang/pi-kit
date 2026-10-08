@@ -9,7 +9,7 @@
  * Then select a `tencent-copilot/<model>` entry via /model.
  *
  * Model snapshot and gateway quirks verified against the live gateway
- * on 2026-09-10 (earlier entries 2026-08-18). The DeepSeek Flash entry points
+ * on 2026-10-08 (earlier entries 2026-09-10 and 2026-08-18). The DeepSeek Flash entry points
  * at `deepseek-v4.1-flash-ioa`, the explicit V4.1 id; the legacy
  * `deepseek-v4-flash-ioa` alias still answers — images included — but upstream
  * lists it as a retired name whose requests are routed to V4.1-Flash.
@@ -82,22 +82,19 @@ const ALL_EFFORTS = {
 // [id, name, contextWindow, maxTokens, supportsImages, efforts]
 // efforts: "all" | null (null = no effort control, gateway rejects it)
 const SNAPSHOT: Array<[string, string, number, number, boolean, "all" | null]> = [
-	["claude-sonnet-5-1m", "Claude Sonnet 5 (1M)", 1000000, 128000, true, "all"],
-	["claude-sonnet-4.6-1m", "Claude Sonnet 4.6 (1M)", 1000000, 24000, true, "all"],
-	["claude-opus-5", "Claude Opus 5", 1000000, 128000, true, "all"],
-	["claude-opus-4.8-1m", "Claude Opus 4.8 (1M)", 1000000, 128000, true, "all"],
-	["claude-opus-4.7-1m", "Claude Opus 4.7 (1M)", 1000000, 128000, true, "all"],
-	["claude-opus-4.6-1m", "Claude Opus 4.6 (1M)", 1000000, 64000, true, "all"],
+	["claude-opus-5.5", "Claude Opus 5.5", 1000000, 128000, true, "all"],
+	["claude-sonnet-5.5", "Claude Sonnet 5.5", 1000000, 128000, true, "all"],
 	["gemini-3.1-pro", "Gemini 3.1 Pro", 400000, 64000, true, "all"],
 	["gemini-3.5-flash", "Gemini 3.5 Flash", 1000000, 65536, true, "all"],
-	["gpt-5.6-sol", "GPT-5.6 Sol", 1000000, 128000, true, "all"],
+	["gpt-6-sol", "GPT-6 Sol", 1050000, 128000, true, "all"],
+	["gpt-6.1-sol", "GPT-6.1 Sol", 1050000, 128000, true, "all"],
+	["gpt-6-luna", "GPT-6 Luna", 1050000, 128000, true, "all"],
 	["gpt-5.6-terra", "GPT-5.6 Terra", 1000000, 128000, true, "all"],
-	["gpt-5.6-luna", "GPT-5.6 Luna", 1000000, 128000, true, "all"],
 	["glm-5.3-ioa", "GLM-5.3", 1000000, 48000, true, "all"],
 	["glm-5.3-flash-ioa", "GLM-5.3 Flash", 1000000, 48000, true, "all"],
 	["minimax-m3-ioa", "MiniMax M3", 512000, 48000, true, "all"],
 	["kimi-k3-ioa", "Kimi K3", 1000000, 32000, true, "all"],
-	["hy3-ioa", "Hy3", 192000, 64000, true, "all"],
+	["hy4-preview-ioa", "Hy4 Preview", 1000000, 64000, true, "all"],
 	["deepseek-v4.1-flash-ioa", "DeepSeek V4.1 Flash", 1000000, 384000, true, "all"],
 	["deepseek-v4-pro-ioa", "DeepSeek V4 Pro", 1000000, 384000, true, "all"],
 ]
