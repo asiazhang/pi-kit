@@ -35,7 +35,7 @@ const SPEED_MIN_SPAN_MS = 100
  * the same beat. (The upstream TUI re-renders the whole line on every delta,
  * so gating the reading itself is what keeps the displayed value stable.)
  */
-export const SPEED_THROTTLE_MS = 1_000
+export const SPEED_THROTTLE_MS = 250
 
 /** Word/punctuation token estimate applied to one streaming delta (`estimate` counting). */
 const TOKEN_REGEX = /\w+|[^\s\w]/g
