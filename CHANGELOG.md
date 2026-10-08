@@ -5,6 +5,16 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.14.4] - 2026-10-08
+
+### Added
+
+- **tencent-copilot**：新增模型 Claude Opus 5.5、Claude Sonnet 5.5、GPT-6 Sol、GPT-6.1 Sol、GPT-6 Luna、Hy4 Preview
+
+### Removed
+
+- **tencent-copilot**：移除 Claude Sonnet 5 (1M)、Claude Sonnet 4.6 (1M)、Claude Opus 5、Claude Opus 4.8 (1M)、Claude Opus 4.7 (1M)、Claude Opus 4.6 (1M)、GPT-5.6 Sol、GPT-5.6 Luna、Hy3
+
 ## [0.14.3] - 2026-09-25
 
 ### Fixed
