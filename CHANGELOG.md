@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.15.0] - 2026-10-12
+
+### Added
+
+- **tencent-copilot**：新增模型 GLM-5.3 Flash X（`glm-5.3-flashx-ioa`）——GLM-5.3-Flash 提速版，1M 上下文，参数取自官方文档并已对 CodeBuddy 网关实测验证（流式调用、`reasoning_effort` 各档位）
+
 ## [0.14.4] - 2026-10-08
 
 ### Added
