@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.16.0] - 2026-10-26
+
+### Added
+
+- **tencent-copilot**：新增模型 MiMo V2.6 Pro（`mimo-v2.6-pro`）——小米 V2.6 系列旗舰，1M 上下文 / 128K 输出、原生全模态（图片输入实测可读）、思考档位沿用 `all`；参数取自官方文档并已对 CodeBuddy 网关实测验证（流式调用、`reasoning_effort` 各档位、工具调用、图片输入）
+
 ## [0.15.0] - 2026-10-12
 
 ### Added
