@@ -9,10 +9,11 @@
  * Then select a `tencent-copilot/<model>` entry via /model.
  *
  * Model snapshot and gateway quirks verified against the live gateway
- * on 2026-10-12 (earlier entries 2026-10-08, 2026-09-10 and 2026-08-18). The DeepSeek Flash entry points
- * at `deepseek-v4.1-flash-ioa`, the explicit V4.1 id; the legacy
- * `deepseek-v4-flash-ioa` alias still answers — images included — but upstream
- * lists it as a retired name whose requests are routed to V4.1-Flash.
+ * on 2026-10-26 (earlier entries 2026-10-12, 2026-10-08, 2026-09-10 and
+ * 2026-08-18). The DeepSeek Flash entry points at `deepseek-v4.1-flash-ioa`,
+ * the explicit V4.1 id; the legacy `deepseek-v4-flash-ioa` alias still answers
+ * — images included — but upstream lists it as a retired name whose requests
+ * are routed to V4.1-Flash.
  * Hot-reloadable via /reload after edits.
  */
 
@@ -93,6 +94,7 @@ const SNAPSHOT: Array<[string, string, number, number, boolean, "all" | null]> =
 	["glm-5.3-ioa", "GLM-5.3", 1000000, 48000, true, "all"],
 	["glm-5.3-flash-ioa", "GLM-5.3 Flash", 1000000, 48000, true, "all"],
 	["glm-5.3-flashx-ioa", "GLM-5.3 Flash X", 1000000, 48000, true, "all"],
+	["mimo-v2.6-pro", "MiMo V2.6 Pro", 1000000, 128000, true, "all"],
 	["minimax-m3-ioa", "MiniMax M3", 512000, 48000, true, "all"],
 	["kimi-k3-ioa", "Kimi K3", 1000000, 32000, true, "all"],
 	["hy4-preview-ioa", "Hy4 Preview", 1000000, 64000, true, "all"],
