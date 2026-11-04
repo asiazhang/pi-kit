@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.17.0] - 2026-11-04
+
+### Changed
+
+- **tencent-copilot**：hy4 正式版（`hy4`）替换 hy4-preview-ioa 测试版——输出上限 64000 → 384000（与 DeepSeek 系列对齐），2026-11-04 网关实测：全档 `reasoning_effort`、图片输入、2M `max_tokens`、约 90 万字符长上下文均通过；旧 `hy4-preview-ioa` 仍能应答但已是退役的测试名，固定过它的配置需改用新 ID
+
 ## [0.16.0] - 2026-10-26
 
 ### Added
