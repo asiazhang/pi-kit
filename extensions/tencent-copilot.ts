@@ -9,8 +9,11 @@
  * Then select a `tencent-copilot/<model>` entry via /model.
  *
  * Model snapshot and gateway quirks verified against the live gateway
- * on 2026-10-26 (earlier entries 2026-10-12, 2026-10-08, 2026-09-10 and
- * 2026-08-18). The DeepSeek Flash entry points at `deepseek-v4.1-flash-ioa`,
+ * on 2026-11-04 (earlier entries 2026-10-26, 2026-10-12, 2026-10-08,
+ * 2026-09-10 and 2026-08-18). Hy4 went GA: the entry points at `hy4`,
+ * the production id (chunk `model` field echoes `hy4-ioa`); the legacy
+ * `hy4-preview-ioa` id still answers but is the retired preview name.
+ * The DeepSeek Flash entry points at `deepseek-v4.1-flash-ioa`,
  * the explicit V4.1 id; the legacy `deepseek-v4-flash-ioa` alias still answers
  * — images included — but upstream lists it as a retired name whose requests
  * are routed to V4.1-Flash.
@@ -97,7 +100,7 @@ const SNAPSHOT: Array<[string, string, number, number, boolean, "all" | null]> =
 	["mimo-v2.6-pro", "MiMo V2.6 Pro", 1000000, 128000, true, "all"],
 	["minimax-m3-ioa", "MiniMax M3", 512000, 48000, true, "all"],
 	["kimi-k3-ioa", "Kimi K3", 1000000, 32000, true, "all"],
-	["hy4-preview-ioa", "Hy4 Preview", 1000000, 64000, true, "all"],
+	["hy4", "Hy4", 1000000, 384000, true, "all"],
 	["deepseek-v4.1-flash-ioa", "DeepSeek V4.1 Flash", 1000000, 384000, true, "all"],
 	["deepseek-v4-pro-ioa", "DeepSeek V4 Pro", 1000000, 384000, true, "all"],
 ]
