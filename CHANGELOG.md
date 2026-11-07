@@ -5,6 +5,18 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.18.0] - 2026-11-07
+
+### Added
+
+- **commandcode**：新增 Command Code（GOAT 订阅）provider（id `commandcode`，`https://api.commandcode.ai/provider/v1`，OpenAI Chat Completions 协议）——上架 GLM-5.3 Flash 与 DeepSeek V4.1 Flash 两个模型（各 1M 上下文、图片输入、`low`/`medium`/`high`/`xhigh`/`max` 五档推理），key 走 pi 凭据系统（存 key 优先、`CMD_API_KEY` 兜底）；id 取裸 `commandcode` 是因为手写的 models.json 两段已删，旧的已存 key 直接复用
+- **coding-plan**：footer 配额窗口支持 Command Code GOAT——第三个 `QUOTA_SOURCES` 条目读 `GET /alpha/billing/credits`（未入文档的计费端点），把 `windowLimits.fiveHour`/`weekly` 的 `used`/`cap` 折算成 0–100，`resetAt` 按毫秒透传；窗口复用 OpenCode Go 的 `⏳5h`/`⏳7d` 仪表与配色（同为 credit 计量的滚动窗口，且两个订阅不同时使用），`cap` 不可用或解析失败时保留上一份快照
+- **tc-footer**：`commandcode` 模型 id 着 syntaxVariable 蓝——与 OpenCode Go 同族（复用其 7d gauge 的 mdLink 基线再深一档），`scripts/footer-preview.mjs` 镜像同步并补两条 GOAT 样例（含一条 88% 告警）
+
+### Changed
+
+- **docs**：新增 ADR `0005-commandcode-quota-windows.md` 记录 GOAT 配额窗口的数据源取舍；`CONTEXT.md` 的 coding plan 词条与 README（provider 说明、登录步骤、footer 语义）同步纳入 GOAT
+
 ## [0.17.0] - 2026-11-04
 
 ### Changed
