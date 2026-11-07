@@ -1,15 +1,17 @@
 /**
  * Parser tests for the per-provider quota sources (bun test) — GLM's
- * unit-based limits and OpenCode Go's defensive window parsing — see
- * docs/adr/0003-opencode-go-quota-windows.md. Both parsers face third-party
- * responses that changed underneath other tools before (the OpenCode Go
- * endpoint reshaped its payload within an hour of launch — cc-switch#6433),
+ * unit-based limits, OpenCode Go's defensive window parsing, and Command
+ * Code's credit-ratio windows — see docs/adr/0003-opencode-go-quota-windows.md
+ * and docs/adr/0005-commandcode-quota-windows.md. Every parser faces
+ * third-party responses that changed underneath other tools before (the
+ * OpenCode Go endpoint reshaped its payload within an hour of launch —
+ * cc-switch#6433, and Command Code's surface sits under an `/alpha` prefix),
  * so every window is read independently, unusable windows are skipped, and a
  * payload with no usable window yields undefined (the poll then keeps the
  * previous snapshot instead of publishing garbage).
  */
 import { expect, test } from "bun:test"
-import { parseGlmQuotas, parseGoQuotas } from "./sources"
+import { parseCommandCodeQuotas, parseGlmQuotas, parseGoQuotas } from "./sources"
 
 const GO_RESET = {
 	rolling: "2026-09-23T06:53:53.904Z",
@@ -86,4 +88,67 @@ test("GLM: unit 3 → ⏳5h mdLink, unit 6 → ⏳7d thinkingHigh", () => {
 test("GLM: payload without any matching unit parses to undefined", () => {
 	expect(parseGlmQuotas(null)).toBeUndefined()
 	expect(parseGlmQuotas({ data: { limits: [{ unit: 9, percentage: 10 }] } })).toBeUndefined()
+})
+
+// Live shape, 2026-11-07: credits rather than a percent, resetAt in epoch ms.
+const CC_RESET = { fiveHour: 1794069978117, weekly: 1794656778117 }
+
+const CC_OK = {
+	credits: { monthlyCredits: 69.7688869185, purchasedCredits: 0, freeCredits: 0 },
+	windowLimits: {
+		limited: true,
+		exceeded: null,
+		fiveHour: { used: 2.1, cap: 14, exceeded: false, resetAt: CC_RESET.fiveHour },
+		weekly: { used: 7, cap: 35, exceeded: false, resetAt: CC_RESET.weekly },
+	},
+}
+
+test("Command Code: credits scale to percent, same labels/baselines as OpenCode Go", () => {
+	const gauges = parseCommandCodeQuotas(CC_OK)
+	expect(gauges?.map((g) => g.label)).toEqual(["⏳5h", "⏳7d"])
+	expect(gauges?.map((g) => g.baseline)).toEqual(["accent", "mdLink"])
+	expect(gauges?.[0].usedPercent).toBeCloseTo(15, 10) // 2.1 / 14
+	expect(gauges?.[1].usedPercent).toBeCloseTo(20, 10) // 7 / 35
+	// Epoch MILLISECONDS go through untouched (the 429 body's reset is seconds).
+	expect(gauges?.[0].resetAt).toBe(CC_RESET.fiveHour)
+	expect(gauges?.[1].resetAt).toBe(CC_RESET.weekly)
+})
+
+test("Command Code: 0% drops the countdown, the other window keeps its own", () => {
+	const gauges = parseCommandCodeQuotas({
+		windowLimits: {
+			fiveHour: { used: 0, cap: 14, resetAt: CC_RESET.fiveHour },
+			weekly: { used: 3.5, cap: 35, resetAt: CC_RESET.weekly },
+		},
+	})
+	expect(gauges?.[0].usedPercent).toBe(0)
+	expect(gauges?.[0].resetAt).toBeUndefined()
+	expect(gauges?.[1].resetAt).toBe(CC_RESET.weekly)
+})
+
+test("Command Code: skips unusable windows, undefined when nothing parses", () => {
+	// A zero/absent cap would divide by zero; non-numeric `used` is not a reading.
+	expect(
+		parseCommandCodeQuotas({
+			windowLimits: {
+				fiveHour: { used: 2, cap: 0, resetAt: CC_RESET.fiveHour },
+				weekly: { used: "3", cap: 35, resetAt: CC_RESET.weekly },
+			},
+		}),
+	).toBeUndefined()
+	expect(
+		parseCommandCodeQuotas({
+			windowLimits: {
+				fiveHour: null,
+				weekly: { used: 7, cap: 35, resetAt: null },
+			},
+		})?.map((g) => g.label),
+	).toEqual(["⏳7d"])
+	// A missing `resetAt` is not an error: the reading survives without a countdown.
+	expect(
+		parseCommandCodeQuotas({ windowLimits: { fiveHour: { used: 1, cap: 14 } } })?.[0].resetAt,
+	).toBeUndefined()
+	expect(parseCommandCodeQuotas(null)).toBeUndefined()
+	expect(parseCommandCodeQuotas({})).toBeUndefined()
+	expect(parseCommandCodeQuotas({ windowLimits: [] })).toBeUndefined()
 })

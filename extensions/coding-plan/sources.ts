@@ -11,9 +11,12 @@ import type { QuotaGauge, QuotaSpec } from "./state"
 /**
  * Gauge layout per provider, in render order. Every gauge gets its own healthy
  * baseline so the windows read as separate instruments, and at each shared
- * label the two providers differ (GLM 5h blue vs OpenCode Go 5h teal, GLM 7d
- * purple vs Go 7d blue) so switching plans looks like a different instrument
- * set. Alarm colors (warning ≥70%, error ≥90%) always win over distinctiveness.
+ * label the two GLM/Go providers differ (GLM 5h blue vs OpenCode Go 5h teal,
+ * GLM 7d purple vs Go 7d blue) so switching plans looks like a different
+ * instrument set. Command Code GOAT is the exception: it reads out the same
+ * rolling 5h + weekly credit windows as Go and the two subscriptions are never
+ * active together, so it reuses Go's labels and baselines verbatim. Alarm
+ * colors (warning ≥70%, error ≥90%) always win over distinctiveness.
  */
 const GLM_GAUGES: readonly QuotaSpec[] = [
 	{ label: "⏳5h", baseline: "mdLink" },
@@ -31,6 +34,21 @@ const GLM_QUOTA_URL = "https://open.bigmodel.cn/api/monitor/usage/quota/limit"
 
 /** OpenCode Go usage endpoint — Bearer-authenticated with the key's own API key. */
 const GO_QUOTA_URL = "https://opencode.ai/zen/go/v1/usage"
+
+/**
+ * Command Code GOAT windows: the same rolling 5h + weekly pair as OpenCode Go,
+ * so they share that plan's gauges — the two subscriptions are never active
+ * together, and the windows mean the same thing either way.
+ */
+const COMMANDCODE_GAUGES: readonly QuotaSpec[] = GO_GAUGES
+
+/**
+ * Command Code credits endpoint — the undocumented `/alpha` billing surface the
+ * `cmd` CLI reads itself (the documented Provider API has no billing route), so
+ * the prefix is unstable by definition: a 404 or a reshaped payload just yields
+ * no gauges and the previous snapshot keeps rendering.
+ */
+const COMMANDCODE_CREDITS_URL = "https://api.commandcode.ai/alpha/billing/credits"
 
 /** Poll cadence; also the snapshot age that triggers a lazy re-poll. */
 export const QUOTA_POLL_MS = 5 * 60_000
@@ -119,8 +137,49 @@ export function parseGoQuotas(json: unknown): QuotaGauge[] | undefined {
 	return gauges.length ? gauges : undefined
 }
 
+/**
+ * Command Code GOAT credits response → gauges (rolling 5h / weekly).
+ * Verified live 2026-11-07 —
+ * `{ credits: { monthlyCredits, purchasedCredits, freeCredits, … },
+ *    windowLimits: { limited, exceeded, fiveHour: { used, cap, exceeded, resetAt },
+ *                    weekly: { … } }, … }`
+ * with `resetAt` in epoch MILLISECONDS (the 429 refusal body's
+ * `rateLimit.reset` is seconds — different unit, different field) and
+ * `used` / `cap` in plan credits rather than a percent, so each window is
+ * scaled to the gauge's 0–100 here. `credits.monthlyCredits` is the remaining
+ * pool: same "monthly is the loosest window, not tracked" call as OpenCode Go.
+ * A window without a numeric `cap > 0` is skipped, and 0% drops the countdown
+ * because a window nobody has drawn on has no opened window to reset — the same
+ * rule and reasoning as OpenCode Go, kept so both plans render the same way.
+ */
+export function parseCommandCodeQuotas(json: unknown): QuotaGauge[] | undefined {
+	const limits = (json as { windowLimits?: Record<string, unknown> } | null)?.windowLimits
+	if (!limits || typeof limits !== "object") return undefined
+	const windows = ["fiveHour", "weekly"]
+	const gauges: QuotaGauge[] = []
+	for (let i = 0; i < COMMANDCODE_GAUGES.length; i++) {
+		const w = limits[windows[i]]
+		if (!w || typeof w !== "object") continue
+		const {
+			used,
+			cap,
+			resetAt: reset,
+		} = w as {
+			used?: unknown
+			cap?: unknown
+			resetAt?: unknown
+		}
+		if (typeof used !== "number" || typeof cap !== "number" || !(cap > 0)) continue
+		const usedPercent = (used / cap) * 100
+		const resetAt = usedPercent > 0 && typeof reset === "number" && reset > 0 ? reset : undefined
+		gauges.push({ ...COMMANDCODE_GAUGES[i], usedPercent, resetAt })
+	}
+	return gauges.length ? gauges : undefined
+}
+
 /** Registered coding-plan quota sources, by pi provider id. */
 export const QUOTA_SOURCES: Record<string, QuotaSource> = {
 	"zai-coding-cn": { url: GLM_QUOTA_URL, parse: parseGlmQuotas },
 	"opencode-go": { url: GO_QUOTA_URL, parse: parseGoQuotas },
+	commandcode: { url: COMMANDCODE_CREDITS_URL, parse: parseCommandCodeQuotas },
 }

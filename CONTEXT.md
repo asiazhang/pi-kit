@@ -13,7 +13,7 @@ _Avoid_: token 百分比、memory 占用
 _Avoid_: of 450k、有效窗口后缀
 
 **Coding plan**:
-按配额窗口计费的 LLM 订阅计划（区别于按 token 计量），当前指 GLM coding plan（pi provider `zai-coding-cn`）与 OpenCode Go（pi provider `opencode-go`，额度以美元计量）。
+按配额窗口计费的 LLM 订阅计划（区别于按 token 计量），当前指 GLM coding plan（pi provider `zai-coding-cn`）、OpenCode Go（pi provider `opencode-go`，额度以美元计量）与 Command Code GOAT（pi provider `commandcode`，窗口按 plan credits 计量，显示与 OpenCode Go 一致——两者不同时使用）。
 _Avoid_: 套餐、credits
 
 **配额窗口 (Quota window)**:

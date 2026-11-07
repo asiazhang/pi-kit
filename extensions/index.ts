@@ -10,6 +10,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import registerCodingPlan from "./coding-plan"
+import registerCommandCode from "./commandcode"
 import registerSystemPrompt from "./system-prompt"
 import registerFooter from "./tc-footer"
 import registerTencentCopilot from "./tencent-copilot"
@@ -17,6 +18,7 @@ import registerWarpNotify from "./warp-notify"
 
 export default function (pi: ExtensionAPI) {
 	registerTencentCopilot(pi)
+	registerCommandCode(pi)
 	registerSystemPrompt(pi)
 	registerCodingPlan(pi)
 	registerFooter(pi)

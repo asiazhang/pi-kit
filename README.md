@@ -2,9 +2,11 @@
 
 [pi](https://github.com/earendil-works/pi-mono) coding agent 的扩展工具包。核心是腾讯 CodeBuddy 接入：用 CodeBuddy 的 API key 在 pi 里使用 Claude / GPT / Gemini / GLM / MiniMax / Kimi / 混元 / DeepSeek 等模型，支持图片输入、推理档位、工具调用。
 
+另带一个独立 provider：**Command Code（GOAT 订阅）**，provider id `commandcode`，走 `https://api.commandcode.ai/provider/v1`（OpenAI Chat Completions 协议），目前只上架 GOAT 计划里的 GLM-5.3 Flash 与 DeepSeek V4.1 Flash。
+
 另附带几个 provider 无关的扩展（默认启用，随包一起加载）：
 
-- **自定义状态栏**（`tc-footer`）：单行显示工作目录、上下文用量百分比与进度条、coding plan 配额窗口（GLM `zai-coding-cn` 与 OpenCode Go `opencode-go` 均显示 `⏳5h` + `⏳7d`；各窗口基线色互不相同，便于一眼区分是哪个 plan，20 格、warning≥70% / error≥90%，仅在对应 provider 活动且已存 key 时显示，超过 10 分钟转暗）、实时 token 速度（`⚡42.3 tok/s`，按速度等级着色：`<50` 红 / `50–100` 黄 / `100–200` 绿 / `≥200` 青，满速锚点 300 tok/s；工具执行期间暂停计时，一轮结束后定格整轮平均）、模型 id、思考等级（✦）、git 分支。pi-web 等无 footer 的界面会在扩展状态栏（`setStatus("coding-plan")`）中显示同一段配额窗口。
+- **自定义状态栏**（`tc-footer`）：单行显示工作目录、上下文用量百分比与进度条、coding plan 配额窗口（GLM `zai-coding-cn`、OpenCode Go `opencode-go` 与 Command Code GOAT `commandcode` 均显示 `⏳5h` + `⏳7d`；GLM 与 Go 的各窗口基线色互不相同，便于一眼区分是哪个 plan，GOAT 读的是与 Go 同一种窗口（且两者不同时使用）所以直接复用 Go 的配色，20 格、warning≥70% / error≥90%，仅在对应 provider 活动且已存 key 时显示，超过 10 分钟转暗）、实时 token 速度（`⚡42.3 tok/s`，按速度等级着色：`<50` 红 / `50–100` 黄 / `100–200` 绿 / `≥200` 青，满速锚点 300 tok/s；工具执行期间暂停计时，一轮结束后定格整轮平均）、模型 id、思考等级（✦）、git 分支。pi-web 等无 footer 的界面会在扩展状态栏（`setStatus("coding-plan")`）中显示同一段配额窗口。
 - **系统提示词注入**（`system-prompt`）：每轮向系统提示词追加用户偏好（bash 搜索使用 `rg`，尊重 .gitignore）。
 - **Warp 终端通知**（`warp-notify`）：仅在 Warp 终端内激活，会话开始、提交提示词、等待提问回答、回答结束、空闲时弹系统通知，turn 进行中在 tab 标题显示进行中动画；子会话（SubAgent）不会误触发通知。非 Warp 环境无任何行为。
 
@@ -30,6 +32,17 @@ pi -e git:github.com/asiazhang/pi-kit
 
 选择 `tencent-copilot`，粘贴 `ck_...` 开头的 key 即可。`/logout` 可移除存储的 key。
 
+### Command Code（GOAT 订阅）
+
+在 [commandcode.ai](https://commandcode.ai) 的 Studio → API keys 创建 key，然后在 `/login` 里选 `commandcode`、粘贴 `user_...` 开头的 key。key 存的是 provider id 名下，而 models.json 那两段用的就是同名 id，所以之前已登录过的环境无需再登录；没存 key 时回退读 `CMD_API_KEY`（`cmd` CLI 的同名变量）。
+
+| id | 名称 | 上下文 | 输出上限 | 图片 | 推理档位 |
+| --- | --- | --- | --- | --- | --- |
+| `z-ai/glm-5.3-flash` | GLM-5.3 Flash | 1M | 131072 | ✅ | low / medium / high / xhigh / max |
+| `deepseek/deepseek-v4.1-flash` | DeepSeek V4.1 Flash | 1M | 384000 | ✅ | 同上 |
+
+provider id 就是 `commandcode`：它现在是**唯一**的 Command Code provider（`~/.pi/agent/models.json` 里手写的 `commandcode` / `commandcode-claude` 两段已删），所以 auth.json 里已存的那把 key 直接被复用，不必重新 `/login`。若将来又在 models.json 里声明同 id 的 provider，它会层叠在这个扩展之上、把自己的模型定义顶掉扩展的列表。
+
 ## 更新扩展
 
 更新已安装的扩展包（拉取远程最新代码）：
@@ -54,6 +67,7 @@ pi update --extensions
 
 ```sh
 pi --model tencent-copilot/glm-5.3-ioa
+pi --model commandcode/z-ai/glm-5.3-flash
 ```
 
 设为默认模型（`~/.pi/agent/settings.json`）：

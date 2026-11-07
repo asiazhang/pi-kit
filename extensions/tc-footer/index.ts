@@ -31,6 +31,8 @@
  * - The OpenCode Go plan's model id (`opencode-go`) renders syntaxVariable
  *   blue — one step deeper than its 7d gauge's mdLink baseline, mirroring the
  *   GLM purple pattern, so plan-backed providers never read as plain text.
+ *   Command Code GOAT (`commandcode`) shares that blue: it shows the same
+ *   5h + 7d credit windows and the two plans are never used together.
  * - Narrow terminals drop segments in order: quota gauges (the last,
  *   slowest window first) → the whole quota segment → token speed → branch;
  *   the model id and context bar always survive, and the whole line
@@ -78,12 +80,15 @@ import {
  * (`opencode-go`) as syntaxVariable blue — same pattern: its 7-day gauge
  * baseline is mdLink, so the model id sits one step deeper in the same blue
  * family (clear of the accent teal its 5h gauge shares with tencent-copilot).
+ * Command Code GOAT (`commandcode`) takes the same syntaxVariable blue:
+ * same gauges, and the two plans are never active together.
  * Providers not listed keep the default text color.
  */
 const MODEL_COLORS: Partial<Record<string, ThemeColor>> = {
 	"tencent-copilot": "accent",
 	"zai-coding-cn": "thinkingXhigh",
 	"opencode-go": "syntaxVariable",
+	commandcode: "syntaxVariable",
 }
 
 export default function (pi: ExtensionAPI) {

@@ -63,6 +63,7 @@ const MODEL_COLORS = {
 	"tencent-copilot": "accent",
 	"zai-coding-cn": "thinkingXhigh",
 	"opencode-go": "syntaxVariable",
+	commandcode: "syntaxVariable",
 }
 
 /** Mirror of SPEED_TIERS in extensions/tc-footer/speed.ts — keep in sync. */
@@ -240,6 +241,10 @@ const go = (rollingPct, ageMin = 0, weeklyPct = 12) => ({
 		{ ...GO_GAUGES[1], usedPercent: weeklyPct, resetAt: Date.now() + 3 * 86_400_000 },
 	],
 })
+
+// Command Code GOAT mock: same rolling 5h + weekly gauges as OpenCode Go (the
+// upstream reports used/cap credits, which the parser scales to a percent).
+const goat = go
 
 // [label, tokens, contextWindow, model, thinking, branch, planWindow, provider, speedTps]
 const cases = [
@@ -428,6 +433,26 @@ const cases = [
 		"main",
 		go(42, 15, 30),
 		"opencode-go",
+	],
+	[
+		"Command Code GOAT 16% / 20% (same teal + blue gauges as OpenCode Go)",
+		30_000,
+		131_072,
+		"glm-5.3-flash",
+		"high",
+		"main",
+		goat(16, 0, 20),
+		"commandcode",
+	],
+	[
+		"Command Code GOAT 5h 88% (one window in alarm, the other healthy)",
+		30_000,
+		131_072,
+		"glm-5.3-flash",
+		"high",
+		"main",
+		goat(88, 0, 20),
+		"commandcode",
 	],
 ]
 
