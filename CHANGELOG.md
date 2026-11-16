@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.19.0] - 2026-11-09
+
+### Added
+
+- **tencent-copilot**：新增模型 Hy4 Flash（`hy4-flash`）——1M 上下文 / 384K 输出（与 hy4、DeepSeek 系列对齐），2026-11-09 网关实测：全档 `reasoning_effort`、图片输入、40 万 `max_tokens`、约 90 万字符长上下文均通过；chunk `model` 字段回显 `hy4-flash-ioa`（裸 `hy4-flash-ioa` 不可用，同 hy4 命名模式）
+
 ## [0.18.0] - 2026-11-07
 
 ### Added
