@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.20.0] - 2026-11-21
+
+### Added
+
+- **tencent-copilot**：新增模型 Kimi K3.1 Pro Highspeed（`kimi-k3.1-pro-highspeed`）——1M 上下文 / 384K 输出（与 hy4、DeepSeek 系列对齐；旧 Kimi K3 为 32K），2026-11-21 网关实测：全档 `reasoning_effort`、图片输入、40 万 `max_tokens`、约 90 万字符长上下文均通过；chunk `model` 字段回显 `kimi-k3.1-highspeed`（裸 `kimi-k3.1-highspeed` 不可用，`kimi-k3.1-pro` 也应答）
+
 ## [0.19.0] - 2026-11-09
 
 ### Added

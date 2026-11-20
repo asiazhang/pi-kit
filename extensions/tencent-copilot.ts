@@ -9,11 +9,14 @@
  * Then select a `tencent-copilot/<model>` entry via /model.
  *
  * Model snapshot and gateway quirks verified against the live gateway
- * on 2026-11-09 (earlier entries 2026-11-04, 2026-10-26, 2026-10-12,
- * 2026-10-08, 2026-09-10 and 2026-08-18). Hy4 went GA: the entry points at
- * `hy4`, the production id (chunk `model` field echoes `hy4-ioa`); the legacy
- * `hy4-preview-ioa` id still answers but is the retired preview name.
- * Hy4 Flash (`hy4-flash`) added 2026-11-09: chunk `model` echoes `hy4-flash-ioa`.
+ * on 2026-11-21 (earlier entries 2026-11-09, 2026-11-04, 2026-10-26,
+ * 2026-10-12, 2026-10-08, 2026-09-10 and 2026-08-18). Hy4 went GA: the entry
+ * points at `hy4`, the production id (chunk `model` field echoes `hy4-ioa`);
+ * the legacy `hy4-preview-ioa` id still answers but is the retired preview
+ * name. Hy4 Flash (`hy4-flash`) added 2026-11-09: chunk `model` echoes
+ * `hy4-flash-ioa`. Kimi K3.1 Pro Highspeed added 2026-11-21: chunk `model`
+ * echoes `kimi-k3.1-highspeed`; the bare `kimi-k3.1-highspeed` id is
+ * unavailable while the plain `kimi-k3.1-pro` id also answers.
  * The DeepSeek Flash entry points at `deepseek-v4.1-flash-ioa`,
  * the explicit V4.1 id; the legacy `deepseek-v4-flash-ioa` alias still answers
  * — images included — but upstream lists it as a retired name whose requests
@@ -101,6 +104,7 @@ const SNAPSHOT: Array<[string, string, number, number, boolean, "all" | null]> =
 	["mimo-v2.6-pro", "MiMo V2.6 Pro", 1000000, 128000, true, "all"],
 	["minimax-m3-ioa", "MiniMax M3", 512000, 48000, true, "all"],
 	["kimi-k3-ioa", "Kimi K3", 1000000, 32000, true, "all"],
+	["kimi-k3.1-pro-highspeed", "Kimi K3.1 Pro Highspeed", 1000000, 384000, true, "all"],
 	["hy4", "Hy4", 1000000, 384000, true, "all"],
 	["hy4-flash", "Hy4 Flash", 1000000, 384000, true, "all"],
 	["deepseek-v4.1-flash-ioa", "DeepSeek V4.1 Flash", 1000000, 384000, true, "all"],
